@@ -1,0 +1,332 @@
+:root {
+    --bg-color: #f9f8f4; /* Washi paper white */
+    --ink-color: #2c2c2c; /* Sumi-e ink */
+    --faint-ink: #d4d2c8; /* Faded ink for light lines */
+    --highlight-bg: #e8e6dc; /* Subtle highlight */
+    --accent-red: #ba3b30; /* Hanko stamp red */
+    --accent-red-hover: #9c2e25;
+    --cell-size: clamp(30px, 8vw, 50px);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Shippori Mincho', serif;
+    background-color: var(--bg-color);
+    color: var(--ink-color);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+    max-width: 600px;
+    width: 100%;
+}
+
+.relative-container {
+    position: relative;
+    padding-top: 20px;
+}
+
+.icon-btn {
+    background: transparent;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.icon-btn:hover {
+    transform: scale(1.1);
+}
+
+.top-right-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    gap: 10px;
+}
+
+header {
+    text-align: center;
+}
+
+h1 {
+    font-size: 3rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    margin-bottom: 5px;
+}
+
+.subtitle {
+    font-family: sans-serif;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--ink-color);
+    opacity: 0.7;
+    margin-bottom: 10px;
+}
+
+.header-stats {
+    display: flex;
+    justify-content: center;
+    gap: 80px; /* Increased from 20px to make them more prominent */
+    align-items: center;
+    margin-top: 5px;
+}
+
+.timer, .mistakes {
+    font-family: monospace;
+    font-size: 1.1rem;
+    color: var(--accent-red);
+    letter-spacing: 0.1em;
+}
+
+.mistakes {
+    color: var(--ink-color);
+}
+
+.sudoku-board {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    border: 3px solid var(--ink-color);
+    background-color: var(--bg-color);
+    width: 95vw;
+    max-width: 450px;
+}
+
+.cell {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: 'Shippori Mincho', serif;
+    font-size: calc(var(--cell-size) * 0.55);
+    color: var(--ink-color);
+    background: transparent;
+    border: 1px solid var(--faint-ink);
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    user-select: none;
+    outline: none;
+}
+
+/* Thicker borders for 3x3 grid separation */
+.cell.border-r {
+    border-right: 2px solid var(--ink-color);
+}
+
+.cell.border-b {
+    border-bottom: 2px solid var(--ink-color);
+}
+
+/* Hover and Focus states */
+.cell:hover {
+    background-color: #f0f4f8; /* Very light blue on hover */
+}
+
+.cell.crosshair {
+    background-color: #f0f4f8; /* Light blue background for crosshair */
+}
+
+.cell.selected {
+    background-color: #e2ebf0; /* Slightly darker blue for active cell */
+    box-shadow: inset 0 0 0 2px #4a6fa5; /* Blue border instead of red for harmony */
+}
+
+.cell.prefilled {
+    font-weight: 700;
+    color: var(--ink-color);
+}
+
+.cell.user-input {
+    color: var(--ink-color); /* Normal user input */
+    font-weight: 400;
+}
+
+.cell.error {
+    color: var(--accent-red);
+    background-color: rgba(186, 59, 48, 0.15) !important; /* Soft red background, important to override crosshair */
+}
+
+
+/* Controls */
+.controls {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    width: 100%;
+}
+
+.btn {
+    background-color: transparent;
+    color: var(--ink-color);
+    border: 1px solid var(--ink-color);
+    padding: 10px 20px;
+    font-family: sans-serif;
+    font-size: 0.85rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn:hover:not(:disabled) {
+    background-color: var(--ink-color);
+    color: var(--bg-color);
+}
+
+.btn:disabled {
+    border-color: var(--faint-ink);
+    color: var(--faint-ink);
+    cursor: not-allowed;
+}
+
+.undo-btn {
+    color: var(--accent-red);
+    border-color: var(--accent-red);
+}
+
+.undo-btn:hover:not(:disabled) {
+    background-color: var(--accent-red);
+    color: var(--bg-color);
+}
+
+.hint-btn {
+    color: #4a6fa5; /* Muted indigo/blue for hint */
+    border-color: #4a6fa5;
+}
+
+.hint-btn:hover:not(:disabled) {
+    background-color: #4a6fa5;
+    color: var(--bg-color);
+}
+
+/* Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+.modal.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.modal-content {
+    background-color: var(--bg-color);
+    padding: 40px;
+    border-radius: 4px;
+    border: 2px solid var(--ink-color);
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.modal-content h2 {
+    font-size: 2rem;
+    margin-bottom: 10px;
+    color: var(--accent-red);
+}
+
+.modal-content p {
+    font-size: 1.2rem;
+    margin-bottom: 25px;
+}
+
+.modal-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+}
+
+.tutorial-content {
+    max-width: 400px;
+}
+
+.tutorial-content h2 {
+    color: var(--ink-color);
+}
+
+.tutorial-content p {
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tutorial-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.step-indicator {
+    font-family: monospace;
+    color: var(--ink-color);
+    opacity: 0.6;
+}
+
+/* Numpad */
+.numpad {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    width: 100%;
+    max-width: 300px;
+    margin: 10px auto 0 auto; /* Center horizontally */
+}
+
+.numpad-btn {
+    aspect-ratio: 1;
+    background: var(--bg-color); /* Solid background for shadow to pop */
+    border: 1px solid var(--faint-ink);
+    color: var(--ink-color);
+    font-family: 'Shippori Mincho', serif;
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: transform 0.1s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+    border-radius: 4px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08); /* Soft outer shadow */
+}
+
+.numpad-btn:hover {
+    background-color: var(--faint-ink); /* Significantly darker background */
+    border-color: var(--ink-color);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+}
+
+.numpad-btn:active {
+    transform: scale(0.95); /* Scale down physical press effect */
+    background-color: #c4c2b7; /* Even darker on press */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* Reduced shadow on press */
+    transition: transform 0.05s ease, background-color 0.05s ease, box-shadow 0.05s ease; /* Instant snap */
+}
