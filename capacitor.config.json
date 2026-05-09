@@ -1,5 +1,12 @@
 {
   "appId": "com.antigravity.sudokupro",
   "appName": "Sudoku Pro",
-  "webDir": "www"
+  "webDir": "www",
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0,
+      "launchAutoHide": true,
+      "androidSplashResourceName": "splash"
+    }
+  }
 }

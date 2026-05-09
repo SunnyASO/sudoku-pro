@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const undoBtn = document.getElementById('undo-btn');
     const undoCountSpan = document.getElementById('undo-count');
     const newGameBtn = document.getElementById('new-game-btn');
+    const eraseBtn = document.getElementById('erase-btn');
     const hintBtn = document.getElementById('hint-btn');
     const hintCountSpan = document.getElementById('hint-count');
     const numpad = document.getElementById('numpad');
@@ -11,19 +12,59 @@ document.addEventListener('DOMContentLoaded', () => {
     const gameOverModal = document.getElementById('game-over-modal');
     const tryAgainBtn = document.getElementById('try-again-btn');
     const restartGameBtn = document.getElementById('restart-game-btn');
-    const tutorialBtn = document.getElementById('tutorial-btn');
+    
+    // Consent Modal
+    const consentModal = document.getElementById('consent-modal');
+    const consentAcceptBtn = document.getElementById('consent-accept-btn');
+    
+    // Stats UI
+    const statsBtn = document.getElementById('stats-btn');
+    const statsModal = document.getElementById('stats-modal');
+    const closeStatsBtn = document.getElementById('close-stats-btn');
+    const resetStatsBtn = document.getElementById('reset-stats-btn');
+    const statGamesPlayed = document.getElementById('stat-games-played');
+    const statGamesWon = document.getElementById('stat-games-won');
+    const statWinRate = document.getElementById('stat-win-rate');
+    const statCurrentStreak = document.getElementById('stat-current-streak');
+    const statBestStreak = document.getElementById('stat-best-streak');
+    const statBestTime = document.getElementById('stat-best-time');
+    const statTotalMistakes = document.getElementById('stat-total-mistakes');
+    
+    // Tutorial UI (Text modal)
     const tutorialModal = document.getElementById('tutorial-modal');
     const tutorialText = document.getElementById('tutorial-text');
     const tutorialStepIndicator = document.getElementById('tutorial-step-indicator');
     const tutorialNextBtn = document.getElementById('tutorial-next-btn');
     const tutorialSkipBtn = document.getElementById('tutorial-skip-btn');
+    
     const muteBtn = document.getElementById('mute-btn');
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsModal = document.getElementById('settings-modal');
+    const closeSettingsBtn = document.getElementById('close-settings-btn');
+    const settingsTutorialBtn = document.getElementById('settings-tutorial-btn');
+    const settingsAdsBtn = document.getElementById('settings-ads-btn');
+    const nightModeToggle = document.getElementById('night-mode-toggle');
+    const hapticToggle = document.getElementById('haptic-toggle');
+    const levelDisplay = document.getElementById('level-display');
+    const levelProgressFill = document.getElementById('level-progress-fill');
+    const levelUpModal = document.getElementById('level-up-modal');
+    const levelUpText = document.getElementById('level-up-text');
+    const levelContinueBtn = document.getElementById('level-continue-btn');
+    const pencilBtn = document.getElementById('pencil-btn');
     
     let selectedCell = null;
+    let isPencilMode = false;
     let solvedGrid = [];
     let undoStack = [];
     const MAX_UNDOS = 3;
     const MAX_HINTS = 3;
+    
+    // Confetti instance setup
+    const confettiCanvas = document.getElementById('confetti-canvas');
+    const myConfetti = window.confetti ? window.confetti.create(confettiCanvas, {
+        resize: true,
+        useWorker: false // Force main thread
+    }) : null;
     let undosRemaining = MAX_UNDOS;
     let hintsRemaining = MAX_HINTS;
     
@@ -32,6 +73,29 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let timerInterval = null;
     let secondsElapsed = 0;
+
+    let currentLevel = parseInt(localStorage.getItem('sudoku-level')) || 1;
+
+    function updateLevelUI() {
+        if (levelDisplay) {
+            levelDisplay.textContent = `Level ${currentLevel}`;
+        }
+        if (levelProgressFill) {
+            const progress = ((currentLevel - 1) % 5) * 20;
+            levelProgressFill.style.width = `${progress}%`;
+        }
+    }
+
+    let isHapticEnabled = localStorage.getItem('sudoku-haptic') !== 'false';
+    let isNightMode = localStorage.getItem('sudoku-night-mode') === 'true';
+
+    if (isNightMode) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        if (nightModeToggle) nightModeToggle.checked = true;
+    }
+    if (hapticToggle) hapticToggle.checked = isHapticEnabled;
+
+
 
     const tutorialSteps = [
         'Every row, column, and 3x3 grid must contain the numbers 1 to 9.',
@@ -104,6 +168,97 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // --- Stats Engine ---
+    const StatsEngine = {
+        stats: {
+            gamesPlayed: 0,
+            gamesWon: 0,
+            currentStreak: 0,
+            bestStreak: 0,
+            bestTime: Infinity,
+            totalMistakes: 0
+        },
+
+        init() {
+            const saved = localStorage.getItem('sudoku-stats');
+            if (saved) {
+                this.stats = JSON.parse(saved);
+            }
+        },
+
+        save() {
+            localStorage.setItem('sudoku-stats', JSON.stringify(this.stats));
+            this.updateUI();
+        },
+
+        recordGameStarted(level) {
+            if (level > 1) { // Skip tutorial level
+                this.stats.gamesPlayed++;
+                this.save();
+            }
+        },
+
+        recordWin(level, timeSeconds) {
+            if (level > 1) {
+                this.stats.gamesWon++;
+                this.stats.currentStreak++;
+                if (this.stats.currentStreak > this.stats.bestStreak) {
+                    this.stats.bestStreak = this.stats.currentStreak;
+                }
+                if (timeSeconds < this.stats.bestTime) {
+                    this.stats.bestTime = timeSeconds;
+                }
+                this.save();
+            }
+        },
+
+        recordGameOver() {
+            this.stats.currentStreak = 0;
+            this.save();
+        },
+
+        recordMistake() {
+            this.stats.totalMistakes++;
+            this.save();
+        },
+
+        formatTime(totalSeconds) {
+            if (totalSeconds === Infinity) return '--:--';
+            const mins = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+            const secs = (totalSeconds % 60).toString().padStart(2, '0');
+            return `${mins}:${secs}`;
+        },
+
+        reset() {
+            this.stats = {
+                gamesPlayed: 0,
+                gamesWon: 0,
+                currentStreak: 0,
+                bestStreak: 0,
+                bestTime: Infinity,
+                totalMistakes: 0
+            };
+            this.save();
+        },
+
+        updateUI() {
+            if (!statGamesPlayed) return; // UI might not be loaded
+            statGamesPlayed.textContent = this.stats.gamesPlayed;
+            statGamesWon.textContent = this.stats.gamesWon;
+            
+            const winRate = this.stats.gamesPlayed > 0 
+                ? Math.round((this.stats.gamesWon / this.stats.gamesPlayed) * 100) 
+                : 0;
+            statWinRate.textContent = `${winRate}%`;
+            
+            statCurrentStreak.textContent = this.stats.currentStreak;
+            statBestStreak.textContent = this.stats.bestStreak;
+            statBestTime.textContent = this.formatTime(this.stats.bestTime);
+            statTotalMistakes.textContent = this.stats.totalMistakes;
+        }
+    };
+    StatsEngine.init();
+
     // Initialize Mute UI
     muteBtn.textContent = SoundEngine.isMuted ? '🔈' : '🔊';
     muteBtn.addEventListener('click', () => {
@@ -128,7 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Numpad Setup ---
-    const numpadValues = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'X']; // X for clear
+    const numpadValues = ['1', '2', '3', '4', '5', '6', '7', '8', '9']; // X removed
     numpadValues.forEach(val => {
         const btn = document.createElement('button');
         btn.classList.add('numpad-btn');
@@ -139,6 +294,23 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         numpad.appendChild(btn);
     });
+
+    if (eraseBtn) {
+        eraseBtn.addEventListener('click', () => {
+            if (!selectedCell || selectedCell.classList.contains('prefilled') || selectedCell.classList.contains('locked-group')) return;
+            setCellValue(selectedCell, '');
+        });
+    }
+
+    if (pencilBtn) {
+        pencilBtn.addEventListener('click', () => {
+            isPencilMode = !isPencilMode;
+            pencilBtn.classList.toggle('active', isPencilMode);
+            if (isPencilMode && isHapticEnabled && navigator.vibrate) {
+                navigator.vibrate(50);
+            }
+        });
+    }
 
     // --- Events ---
     document.addEventListener('mousedown', (e) => {
@@ -170,11 +342,100 @@ document.addEventListener('DOMContentLoaded', () => {
     undoBtn.addEventListener('click', performUndo);
     newGameBtn.addEventListener('click', startNewGame);
     hintBtn.addEventListener('click', giveHint);
-    
     tryAgainBtn.addEventListener('click', tryAgain);
     restartGameBtn.addEventListener('click', restartGame);
     
-    tutorialBtn.addEventListener('click', showTutorial);
+    if (levelContinueBtn) {
+        levelContinueBtn.addEventListener('click', () => {
+            levelUpModal.classList.add('hidden');
+            startNewGame();
+        });
+    }
+
+    // Settings logic
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', () => {
+            settingsModal.classList.remove('hidden');
+        });
+    }
+
+    if (closeSettingsBtn) {
+        closeSettingsBtn.addEventListener('click', () => {
+            settingsModal.classList.add('hidden');
+        });
+    }
+
+    if (settingsTutorialBtn) {
+        settingsTutorialBtn.addEventListener('click', () => {
+            settingsModal.classList.add('hidden');
+            showTutorial();
+        });
+    }
+
+    if (settingsAdsBtn) {
+        settingsAdsBtn.addEventListener('click', () => {
+            alert('Remove Ads feature is coming soon!');
+        });
+    }
+
+    if (nightModeToggle) {
+        nightModeToggle.addEventListener('change', (e) => {
+            isNightMode = e.target.checked;
+            if (isNightMode) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+            }
+            localStorage.setItem('sudoku-night-mode', isNightMode);
+        });
+    }
+
+    if (hapticToggle) {
+        hapticToggle.addEventListener('change', (e) => {
+            isHapticEnabled = e.target.checked;
+            localStorage.setItem('sudoku-haptic', isHapticEnabled);
+        });
+    }
+
+    if (levelContinueBtn) {
+        levelContinueBtn.addEventListener('click', () => {
+            levelUpModal.classList.add('hidden');
+            startNewGame();
+        });
+    }
+
+    // --- Stats Modal Events ---
+    if (statsBtn) {
+        statsBtn.addEventListener('click', () => {
+            StatsEngine.updateUI();
+            statsModal.classList.remove('hidden');
+        });
+    }
+
+    if (closeStatsBtn) {
+        closeStatsBtn.addEventListener('click', () => {
+            statsModal.classList.add('hidden');
+        });
+    }
+
+    if (resetStatsBtn) {
+        resetStatsBtn.addEventListener('click', () => {
+            if (confirm("Are you sure you want to reset all statistics? This cannot be undone.")) {
+                StatsEngine.reset();
+            }
+        });
+    }
+
+    // --- Consent Modal Logic ---
+    if (!localStorage.getItem('sudoku-consent-accepted')) {
+        consentModal.classList.remove('hidden');
+    }
+
+    consentAcceptBtn.addEventListener('click', () => {
+        localStorage.setItem('sudoku-consent-accepted', 'true');
+        consentModal.classList.add('hidden');
+    });
+
     tutorialNextBtn.addEventListener('click', nextTutorialStep);
     tutorialSkipBtn.addEventListener('click', () => tutorialModal.classList.add('hidden'));
 
@@ -216,7 +477,9 @@ document.addEventListener('DOMContentLoaded', () => {
         cells.forEach(c => {
             if (!c.classList.contains('prefilled')) {
                 c.textContent = '';
-                c.classList.remove('user-input', 'error');
+                c.dataset.value = '';
+                c.dataset.notes = '';
+                c.classList.remove('user-input', 'error', 'locked-group');
             }
         });
         
@@ -235,6 +498,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function selectCell(cell) {
+        if (cell.classList.contains('locked-group') || cell.classList.contains('prefilled')) {
+            cell.classList.remove('locked-pulse');
+            void cell.offsetWidth; // Trigger reflow for animation
+            cell.classList.add('locked-pulse');
+            // Allow selection to continue so users can still see crosshairs
+        }
+
         if (selectedCell) {
             selectedCell.classList.remove('selected');
         }
@@ -259,42 +529,142 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function setCellValue(cell, value) {
-        const currentValue = cell.textContent;
-        if (currentValue === value) return;
+    function renderNotes(cell) {
+        const notesStr = cell.dataset.notes || '';
+        const notes = notesStr.split(',').filter(n => n);
+        
+        let html = '<div class="notes-grid">';
+        for (let i = 1; i <= 9; i++) {
+            if (notes.includes(i.toString())) {
+                html += `<div class="note-cell">${i}</div>`;
+            } else {
+                html += `<div class="note-cell"></div>`;
+            }
+        }
+        html += '</div>';
+        cell.innerHTML = html;
+    }
 
-        // Check for mistake before setting
-        if (value !== '') {
+    function autoCleanupNotes(placedIndexStr, placedValue) {
+        const placedIndex = parseInt(placedIndexStr);
+        const pRow = Math.floor(placedIndex / 9);
+        const pCol = placedIndex % 9;
+        const pBlockRow = Math.floor(pRow / 3);
+        const pBlockCol = Math.floor(pCol / 3);
+
+        const cells = Array.from(board.children);
+        cells.forEach((cell, i) => {
+            if (i === placedIndex) return;
+            if (cell.classList.contains('user-input') || cell.classList.contains('prefilled')) return;
+            
+            const r = Math.floor(i / 9);
+            const c = i % 9;
+            const bRow = Math.floor(r / 3);
+            const bCol = Math.floor(c / 3);
+            
+            if (r === pRow || c === pCol || (bRow === pBlockRow && bCol === pBlockCol)) {
+                if (cell.dataset.notes) {
+                    let notes = cell.dataset.notes.split(',').filter(n => n);
+                    if (notes.includes(placedValue)) {
+                        notes = notes.filter(n => n !== placedValue);
+                        cell.dataset.notes = notes.join(',');
+                        if (notes.length === 0) {
+                            cell.innerHTML = '';
+                            cell.dataset.notes = '';
+                        } else {
+                            renderNotes(cell);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function setCellValue(cell, value) {
+        if (cell.classList.contains('locked-group') || cell.classList.contains('prefilled')) {
+            cell.classList.remove('locked-pulse');
+            void cell.offsetWidth;
+            cell.classList.add('locked-pulse');
+            return;
+        }
+
+        const currentValue = cell.dataset.value || (cell.classList.contains('user-input') ? cell.textContent : '');
+        const currentNotes = cell.dataset.notes || '';
+        
+        if (!isPencilMode && currentValue === value && value !== '') return;
+
+        // Eraser
+        if (value === '') {
+            if (undosRemaining > 0) {
+                undoStack.push({ cell, prevValue: currentValue, prevNotes: currentNotes });
+                updateUndoUI();
+            }
+            cell.dataset.value = '';
+            cell.dataset.notes = '';
+            cell.textContent = '';
+            cell.classList.remove('user-input');
+            SoundEngine.playPop();
+            validateBoard();
+            return;
+        }
+
+        if (isPencilMode) {
+            // Pencil Mode
+            if (cell.classList.contains('user-input') || cell.classList.contains('prefilled')) return; // Can't add notes to filled cell
+            
+            if (undosRemaining > 0) {
+                undoStack.push({ cell, prevValue: currentValue, prevNotes: currentNotes });
+                updateUndoUI();
+            }
+            
+            let notes = currentNotes ? currentNotes.split(',').filter(n => n) : [];
+            if (notes.includes(value)) {
+                notes = notes.filter(n => n !== value); // Remove note
+            } else {
+                notes.push(value); // Add note
+            }
+            notes.sort();
+            
+            cell.dataset.notes = notes.join(',');
+            
+            if (notes.length === 0) {
+                cell.innerHTML = '';
+            } else {
+                renderNotes(cell);
+            }
+            SoundEngine.playPop();
+        } else {
+            // Normal Mode
             const correctValue = solvedGrid[cell.dataset.index].toString();
             if (value !== correctValue) {
                 mistakes++;
                 SoundEngine.playBuzz();
+                if (isHapticEnabled && navigator.vibrate) navigator.vibrate(200);
                 updateMistakeUI();
+                StatsEngine.recordMistake();
                 if (mistakes >= MAX_MISTAKES) {
                     triggerGameOver();
                 }
             } else {
                 SoundEngine.playPop();
             }
-        } else {
-            SoundEngine.playPop(); // Pop sound for clearing as well
-        }
 
-        if (undosRemaining > 0) {
-            undoStack.push({
-                cell: cell,
-                prevValue: currentValue
-            });
-            updateUndoUI();
-        }
+            if (undosRemaining > 0) {
+                undoStack.push({ cell, prevValue: currentValue, prevNotes: currentNotes });
+                updateUndoUI();
+            }
 
-        cell.textContent = value;
-        if (value) {
+            cell.dataset.value = value;
+            cell.dataset.notes = '';
+            cell.textContent = value;
             cell.classList.add('user-input');
-        } else {
-            cell.classList.remove('user-input');
+            
+            if (value === correctValue) {
+                autoCleanupNotes(cell.dataset.index, value);
+            }
+            
+            validateBoard();
         }
-        validateBoard();
     }
 
     function updateMistakeUI() {
@@ -305,6 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function triggerGameOver() {
         stopTimer();
+        StatsEngine.recordGameOver();
         SoundEngine.playGameOver();
         gameOverModal.classList.remove('hidden');
     }
@@ -312,11 +683,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Validation Logic ---
     function validateBoard() {
         const cells = Array.from(board.children);
-        cells.forEach(c => c.classList.remove('error'));
+        cells.forEach(c => {
+            c.classList.remove('error');
+            c.classList.remove('locked-group');
+        });
 
         let hasErrors = false;
+        const gridState = new Array(81).fill('');
+        
         for (let i = 0; i < 81; i++) {
-            const val = cells[i].textContent;
+            let val = '';
+            if (cells[i].classList.contains('user-input') || cells[i].classList.contains('prefilled')) {
+                val = cells[i].dataset.value || cells[i].childNodes[0].nodeValue || '';
+            }
+            gridState[i] = val;
             if (!val) continue;
 
             // Highlight if incorrect against the solution
@@ -327,19 +707,91 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
+        // --- Cell Locking Logic ---
+        // Only lock if there are no errors on the board (prevents locking a row if an intersecting column is wrong)
+        if (!hasErrors) {
+            // Check Rows
+            for (let r = 0; r < 9; r++) {
+                const rowCells = [];
+                let isComplete = true;
+                for (let c = 0; c < 9; c++) {
+                    const idx = r * 9 + c;
+                    rowCells.push(cells[idx]);
+                    if (!gridState[idx]) isComplete = false;
+                }
+                if (isComplete) rowCells.forEach(cell => cell.classList.add('locked-group'));
+            }
+            
+            // Check Columns
+            for (let c = 0; c < 9; c++) {
+                const colCells = [];
+                let isComplete = true;
+                for (let r = 0; r < 9; r++) {
+                    const idx = r * 9 + c;
+                    colCells.push(cells[idx]);
+                    if (!gridState[idx]) isComplete = false;
+                }
+                if (isComplete) colCells.forEach(cell => cell.classList.add('locked-group'));
+            }
+            
+            // Check 3x3 Blocks
+            for (let br = 0; br < 3; br++) {
+                for (let bc = 0; bc < 3; bc++) {
+                    const blockCells = [];
+                    let isComplete = true;
+                    for (let i = 0; i < 3; i++) {
+                        for (let j = 0; j < 3; j++) {
+                            const row = br * 3 + i;
+                            const col = bc * 3 + j;
+                            const idx = row * 9 + col;
+                            blockCells.push(cells[idx]);
+                            if (!gridState[idx]) isComplete = false;
+                        }
+                    }
+                    if (isComplete) blockCells.forEach(cell => cell.classList.add('locked-group'));
+                }
+            }
+        }
+
         checkWinCondition(hasErrors);
     }
 
     function checkWinCondition(hasErrors) {
         const cells = Array.from(board.children);
-        const isFull = cells.every(c => c.textContent !== '');
+        const isFull = cells.every(c => c.classList.contains('user-input') || c.classList.contains('prefilled'));
 
         if (isFull && !hasErrors) {
             stopTimer();
-            SoundEngine.playVictory();
             timerDisplay.style.color = '#4a6fa5'; // Win color
+            
+            StatsEngine.recordWin(currentLevel, secondsElapsed);
+            
+            // Level up
+            currentLevel++;
+            localStorage.setItem('sudoku-level', currentLevel);
+
+            SoundEngine.playVictory();
             // Small timeout to allow UI to render the last number before alerting
-            setTimeout(() => alert(`Congratulations! You solved the puzzle in ${timerDisplay.textContent}.`), 100);
+            setTimeout(() => {
+                updateLevelUI();
+                
+                // Fire confetti!
+                if (myConfetti) {
+                    myConfetti({
+                        particleCount: 150,
+                        spread: 70,
+                        origin: { y: 0.6 }
+                    });
+                }
+                
+                if (levelUpModal && levelUpText) {
+                    levelUpText.textContent = `You reached Level ${currentLevel}`;
+                    levelUpModal.classList.remove('hidden');
+                } else {
+                    alert(`Congratulations! You solved the puzzle in ${timerDisplay.textContent}.\n\nAdvancing to Level ${currentLevel}!`);
+                    startNewGame();
+                }
+            }, 100);
         } else {
             timerDisplay.style.color = ''; // Reset to default
         }
@@ -350,10 +802,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (undosRemaining <= 0 || undoStack.length === 0) return;
 
         const lastAction = undoStack.pop();
-        lastAction.cell.textContent = lastAction.prevValue;
+        
+        // Restore values and notes
+        lastAction.cell.dataset.value = lastAction.prevValue;
+        lastAction.cell.dataset.notes = lastAction.prevNotes;
+        
         if (lastAction.prevValue) {
+            lastAction.cell.textContent = lastAction.prevValue;
             lastAction.cell.classList.add('user-input');
+        } else if (lastAction.prevNotes) {
+            lastAction.cell.classList.remove('user-input');
+            renderNotes(lastAction.cell);
         } else {
+            lastAction.cell.textContent = '';
             lastAction.cell.classList.remove('user-input');
         }
 
@@ -426,8 +887,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // --- Sudoku Generation (Unique Solution) ---
+    // --- Sudoku Generation & State ---
+    
+    /**
+     * Generates a brand new Sudoku puzzle and resets the game state.
+     * 
+     * Example:
+     * - Resets undos to 3, hints to 3, mistakes to 0.
+     * - Generates a valid full board using fillGrid().
+     * - Removes cells based on the user's currentLevel (e.g. Level 1 removes 31 cells).
+     */
     function startNewGame() {
+        // Clear any stuck confetti
+        if (myConfetti) {
+            myConfetti.reset();
+        }
+
         // Reset state
         undoStack = [];
         undosRemaining = MAX_UNDOS;
@@ -444,7 +919,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const cells = Array.from(board.children);
         cells.forEach(c => {
             c.textContent = '';
-            c.classList.remove('prefilled', 'user-input', 'error', 'crosshair');
+            c.dataset.value = '';
+            c.dataset.notes = '';
+            c.classList.remove('prefilled', 'user-input', 'error', 'crosshair', 'tutorial-highlight', 'tutorial-dim', 'locked-group');
         });
 
         // 1. Generate full solved board
@@ -454,16 +931,63 @@ document.addEventListener('DOMContentLoaded', () => {
         // Save the solved grid for hints
         solvedGrid = [...grid];
 
-        // 2. Remove cells to create puzzle with unique solution
-        // Clues count: ~35-40 for medium. We will aim to remove ~45 cells.
-        const attempts = 50; 
-        removeCells(grid, attempts);
+        // Record that a new real game has started
+        StatsEngine.recordGameStarted(currentLevel);
+
+        // 2. Remove cells to create puzzle with progressive difficulty
+        let cellsToRemove;
+        let attemptsBuffer = 5;
+        
+        if (currentLevel === 1) {
+            cellsToRemove = 1;
+            attemptsBuffer = 0; // Force exactly 1 removal for tutorial
+        } else if (currentLevel === 2) {
+            cellsToRemove = 12; // Extremely easy, ~69 clues
+        } else if (currentLevel === 3) {
+            cellsToRemove = 20; // Very easy, ~61 clues
+        } else if (currentLevel <= 10) {
+            cellsToRemove = 20 + ((currentLevel - 3) * 4); // L4: 24, L5: 28 ... L10: 48
+        } else {
+            cellsToRemove = Math.floor(Math.random() * 6) + 51; // Standard Hard, removes 51-56
+        }
+
+        // Add a slight buffer to attempts since some removals might break uniqueness and be skipped
+        removeCells(grid, cellsToRemove + attemptsBuffer);
 
         // 3. Render
         for (let i = 0; i < 81; i++) {
             if (grid[i] !== 0) {
                 cells[i].textContent = grid[i];
                 cells[i].classList.add('prefilled');
+            }
+        }
+        
+        // 4. Tutorial Highlight for Level 1
+        if (currentLevel === 1) {
+            const emptyIndex = grid.indexOf(0);
+            if (emptyIndex !== -1) {
+                const row = Math.floor(emptyIndex / 9);
+                const col = emptyIndex % 9;
+                const startRow = Math.floor(row / 3) * 3;
+                const startCol = Math.floor(col / 3) * 3;
+                
+                // Keep track of which cells are in the target block
+                const targetCells = new Set();
+                
+                for (let i = 0; i < 3; i++) {
+                    for (let j = 0; j < 3; j++) {
+                        const cellIndex = (startRow + i) * 9 + (startCol + j);
+                        cells[cellIndex].classList.add('tutorial-highlight');
+                        targetCells.add(cellIndex);
+                    }
+                }
+                
+                // Dim all other cells on the board
+                for (let i = 0; i < 81; i++) {
+                    if (!targetCells.has(i)) {
+                        cells[i].classList.add('tutorial-dim');
+                    }
+                }
             }
         }
         
@@ -491,6 +1015,17 @@ document.addEventListener('DOMContentLoaded', () => {
         timerDisplay.textContent = `${mins}:${secs}`;
     }
 
+    /**
+     * Recursively fills the Sudoku grid with a valid, complete solution using a backtracking algorithm.
+     * 
+     * @param {number[]} grid - A 1D array of length 81 representing the 9x9 board. Empty cells are 0.
+     * @returns {boolean} - Returns true if the grid was successfully filled.
+     * 
+     * Example:
+     * let emptyBoard = new Array(81).fill(0);
+     * fillGrid(emptyBoard);
+     * // emptyBoard now contains 81 numbers satisfying all Sudoku rules.
+     */
     function fillGrid(grid) {
         for (let i = 0; i < 81; i++) {
             if (grid[i] === 0) {
@@ -508,6 +1043,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
     }
 
+    /**
+     * Digs holes in a fully solved grid to create a playable puzzle.
+     * It ensures the resulting puzzle still has exactly ONE unique solution.
+     * 
+     * @param {number[]} grid - The fully solved 1D array board.
+     * @param {number} attempts - The number of cells the algorithm should attempt to remove.
+     * 
+     * Example:
+     * removeCells(mySolvedGrid, 40);
+     * // mySolvedGrid now has ~40 cells set to 0, ready to be played.
+     */
     function removeCells(grid, attempts) {
         while (attempts > 0) {
             let row = Math.floor(Math.random() * 9);
@@ -551,6 +1097,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    /**
+     * Checks if placing a number in a specific index violates any Sudoku rules
+     * (i.e. checking if the number already exists in its row, column, or 3x3 subgrid).
+     * 
+     * @param {number[]} grid - The 1D array representing the board.
+     * @param {number} index - The index (0-80) where the number is being placed.
+     * @param {number} num - The number (1-9) to check.
+     * @returns {boolean} - True if the move is valid, false otherwise.
+     * 
+     * Example:
+     * // Check if placing '5' at the top-left cell (index 0) is valid:
+     * let isValidMove = isValid(grid, 0, 5); 
+     */
     function isValid(grid, index, num) {
         const row = Math.floor(index / 9);
         const col = index % 9;
@@ -571,6 +1130,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial state
+    updateLevelUI();
     updateUndoUI();
     updateHintUI();
     startNewGame();
@@ -579,5 +1139,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!localStorage.getItem('sudoku-tutorial-seen')) {
         showTutorial();
         localStorage.setItem('sudoku-tutorial-seen', 'true');
+    }
+
+    // Web Splash Screen Logic
+    const webSplashScreen = document.getElementById('web-splash-screen');
+    const phase1 = document.getElementById('splash-phase-1');
+    const phase2 = document.getElementById('splash-phase-2');
+    
+    if (webSplashScreen && phase1 && phase2) {
+        // Phase 1 (Studio Intro) lasts for 2 seconds
+        setTimeout(() => {
+            phase1.classList.add('fade-out');
+            phase2.classList.add('active'); // Triggers Phase 2 and progress bar animation
+            
+            // Phase 2 (Game Intro + Progress Bar) lasts for 3.5 seconds
+            setTimeout(() => {
+                webSplashScreen.classList.add('fade-out');
+                
+                // Remove from DOM after overall fade transition completes
+                setTimeout(() => {
+                    webSplashScreen.style.display = 'none';
+                }, 500); 
+            }, 3500);
+        }, 2000);
     }
 });

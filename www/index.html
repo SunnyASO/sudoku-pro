@@ -8,17 +8,50 @@
     <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container relative-container">
-        <div class="top-right-controls">
-            <button id="mute-btn" class="icon-btn" title="Toggle Sound">🔊</button>
-            <button id="tutorial-btn" class="icon-btn" title="How to Play">💡</button>
+    <!-- Web Splash Screen -->
+    <div id="web-splash-screen" class="web-splash-screen">
+        
+        <!-- Phase 1: Studio Intro -->
+        <div id="splash-phase-1" class="splash-content phase-1">
+            <img src="assets/studio-icon.png" alt="Apps Edifice Logo" class="splash-icon studio-icon">
+            <p class="studio-text">Presented by Apps Edifice</p>
         </div>
+
+        <!-- Phase 2: Game Intro -->
+        <div id="splash-phase-2" class="splash-content phase-2">
+            <div class="splash-titles">
+                <h1 class="splash-title-jp">数独</h1>
+                <p class="splash-title-en">Sudoku Pro</p>
+            </div>
+            <img src="assets/game-icon.png" alt="Sudoku Pro Logo" class="splash-icon game-icon">
+            <div class="splash-progress-container">
+                <div class="splash-progress-bar"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="container relative-container">
         <header>
-            <h1>数独</h1> <!-- Sudoku in Japanese kanji -->
-            <p class="subtitle">Sudoku Pro</p>
+            <div class="header-row">
+                <div class="header-spacer"></div> <!-- Spacer to keep titles centered -->
+                <div class="header-titles">
+                    <h1>数独</h1> <!-- Sudoku in Japanese kanji -->
+                    <p class="subtitle">Sudoku Pro</p>
+                </div>
+                <div class="top-right-controls">
+                    <button id="mute-btn" class="icon-btn" title="Toggle Sound">🔊</button>
+                    <button id="stats-btn" class="icon-btn" title="Statistics">📊</button>
+                    <button id="settings-btn" class="icon-btn" title="Settings">⚙️</button>
+                </div>
+            </div>
             <div class="header-stats">
+                <div id="level-display" class="mistakes">Level 1</div>
                 <div id="timer" class="timer">00:00</div>
                 <div id="mistakes" class="mistakes">Mistakes: 0/3</div>
+            </div>
+            <div class="progress-container">
+                <div id="level-progress-fill" class="progress-fill"></div>
             </div>
         </header>
         
@@ -32,13 +65,19 @@
             </div>
 
             <div class="controls">
-                <button id="new-game-btn" class="btn">New Game</button>
+                <button id="erase-btn" class="btn">
+                    <span class="icon">⌫</span> Erase
+                </button>
+                <button id="pencil-btn" class="btn">
+                    <span class="icon">✏️</span> Notes
+                </button>
                 <button id="undo-btn" class="btn undo-btn">
                     <span class="icon">↺</span> Undo (<span id="undo-count">3</span>)
                 </button>
                 <button id="hint-btn" class="btn hint-btn">
                     <span class="icon">💡</span> Hint (<span id="hint-count">3</span>)
                 </button>
+                <button id="new-game-btn" class="btn">New Game</button>
             </div>
         </main>
     </div>
@@ -70,6 +109,108 @@
         </div>
     </div>
 
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content settings-content">
+            <button id="close-settings-btn" class="icon-btn close-btn" title="Close">✖</button>
+            <h2>Settings</h2>
+            <div class="settings-list">
+                <button id="settings-tutorial-btn" class="btn hint-btn settings-list-btn">How to Play</button>
+                <a href="https://appsedifice.com/terms-and-conditions/" class="btn hint-btn settings-list-btn" target="_blank" style="text-decoration: none;">Terms & Conditions</a>
+                <a href="https://appsedifice.com/privacy-policy-2/" class="btn hint-btn settings-list-btn" target="_blank" style="text-decoration: none;">Privacy Policy</a>
+                <button id="settings-ads-btn" class="btn hint-btn settings-list-btn">Remove Ads</button>
+                <a href="mailto:ahmadxalman@gmail.com" class="btn hint-btn settings-list-btn" style="text-decoration: none;">Help/Support</a>
+                <div class="settings-toggle-row">
+                    <span>Night Mode</span>
+                    <label class="switch">
+                        <input type="checkbox" id="night-mode-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="settings-toggle-row">
+                    <span>Haptic Feedback</span>
+                    <label class="switch">
+                        <input type="checkbox" id="haptic-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Level Up Modal -->
+    <div id="level-up-modal" class="modal hidden">
+        <div class="modal-content level-up-content">
+            <h2 class="level-up-title">LEVEL UP!</h2>
+            <p id="level-up-text" class="level-up-text">You reached Level 2</p>
+            <div class="modal-buttons">
+                <button id="level-continue-btn" class="btn hint-btn">Continue</button>
+            </div>
+        </div>
+    </div>
+    <!-- Statistics Modal -->
+    <div id="stats-modal" class="modal hidden">
+        <div class="modal-content stats-content">
+            <button id="close-stats-btn" class="icon-btn close-btn">✕</button>
+            <h2>Statistics</h2>
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <span class="stat-value" id="stat-games-played">0</span>
+                    <span class="stat-label">Games Played</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-value" id="stat-games-won">0</span>
+                    <span class="stat-label">Games Won</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-value" id="stat-win-rate">0%</span>
+                    <span class="stat-label">Win Rate</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-value" id="stat-current-streak">0</span>
+                    <span class="stat-label">Current Streak</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-value" id="stat-best-streak">0</span>
+                    <span class="stat-label">Best Streak</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-value" id="stat-best-time">--:--</span>
+                    <span class="stat-label">Best Time</span>
+                </div>
+                <div class="stat-box full-width">
+                    <span class="stat-value" id="stat-total-mistakes">0</span>
+                    <span class="stat-label">Total Mistakes Made</span>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button id="reset-stats-btn" class="btn undo-btn">Reset Stats</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- First Launch Consent Modal -->
+    <div id="consent-modal" class="modal hidden" style="z-index: 1000;">
+        <div class="modal-content" style="max-width: 400px;">
+            <h2>Welcome to Sudoku Pro</h2>
+            <p style="margin: 20px 0; line-height: 1.5; font-size: 16px;">
+                Before you start playing, please review our Terms and Conditions and Privacy Policy. By continuing to use this app, you agree to our policies.
+            </p>
+            <div class="modal-buttons" style="flex-direction: column; gap: 10px; align-items: center;">
+                <a href="https://appsedifice.com/terms-and-conditions/" target="_blank" style="color: var(--accent-red); text-decoration: underline;">View Terms & Conditions</a>
+                <a href="https://appsedifice.com/privacy-policy-2/" target="_blank" style="color: var(--accent-red); text-decoration: underline;">View Privacy Policy</a>
+            </div>
+            <div class="modal-buttons" style="margin-top: 30px;">
+                <button id="consent-accept-btn" class="btn" style="width: 100%;">I Accept</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dedicated Confetti Canvas -->
+    <canvas id="confetti-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; pointer-events: none; z-index: 2000;"></canvas>
+
+    <!-- Celebration library -->
+    <script src="confetti.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
