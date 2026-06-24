@@ -1,4 +1,57 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // ═══════════════════════════════════════════════
+    //  VIEW SWITCHING
+    // ═══════════════════════════════════════════════
+
+    const homeScreen = document.getElementById('home-screen');
+    const gameScreen = document.getElementById('game-screen');
+
+    function showView(viewName) {
+        if (viewName === 'home') {
+            homeScreen.classList.remove('hidden-view');
+            gameScreen.classList.add('hidden-view');
+            updateContinueButton();
+        } else if (viewName === 'game') {
+            homeScreen.classList.add('hidden-view');
+            gameScreen.classList.remove('hidden-view');
+        }
+    }
+
+    // ═══════════════════════════════════════════════
+    //  DIFFICULTY STATE
+    // ═══════════════════════════════════════════════
+
+    let selectedDifficulty = localStorage.getItem('sudoku-difficulty') || 'easy';
+
+    const diffEasyBtn = document.getElementById('difficulty-easy-btn');
+    const diffMediumBtn = document.getElementById('difficulty-medium-btn');
+    const diffHardBtn = document.getElementById('difficulty-hard-btn');
+    const diffChips = [diffEasyBtn, diffMediumBtn, diffHardBtn].filter(Boolean);
+
+    function updateDifficultyUI() {
+        diffChips.forEach(chip => {
+            if (chip.dataset.difficulty === selectedDifficulty) {
+                chip.classList.add('selected');
+            } else {
+                chip.classList.remove('selected');
+            }
+        });
+    }
+
+    diffChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+            selectedDifficulty = chip.dataset.difficulty;
+            localStorage.setItem('sudoku-difficulty', selectedDifficulty);
+            updateDifficultyUI();
+        });
+    });
+
+    updateDifficultyUI();
+
+    // ═══════════════════════════════════════════════
+    //  GAME ENGINE REFERENCES
+    // ═══════════════════════════════════════════════
+
     const board = document.getElementById('sudoku-board');
     const undoBtn = document.getElementById('undo-btn');
     const undoCountSpan = document.getElementById('undo-count');
@@ -51,6 +104,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const levelUpText = document.getElementById('level-up-text');
     const levelContinueBtn = document.getElementById('level-continue-btn');
     const pencilBtn = document.getElementById('pencil-btn');
+
+    // Home screen buttons
+    const continueGameBtn = document.getElementById('continue-game-btn');
+    const newGameHomeBtn = document.getElementById('new-game-home-btn');
+    const dailyChallengeBtn = document.getElementById('daily-challenge-btn');
+    const homeStatsBtn = document.getElementById('home-stats-btn');
+    const achievementsBtn = document.getElementById('achievements-btn');
+    const homeSettingsBtn = document.getElementById('home-settings-btn');
+    const homeBackBtn = document.getElementById('home-back-btn');
+
+    // Placeholder modal
+    const placeholderModal = document.getElementById('placeholder-modal');
+    const placeholderModalTitle = document.getElementById('placeholder-modal-title');
+    const placeholderModalMsg = document.getElementById('placeholder-modal-msg');
+    const placeholderCloseBtn = document.getElementById('placeholder-close-btn');
     
     let selectedCell = null;
     let isPencilMode = false;
@@ -340,7 +408,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     undoBtn.addEventListener('click', performUndo);
-    newGameBtn.addEventListener('click', startNewGame);
+    newGameBtn.addEventListener('click', () => {
+        startNewGame();
+        saveGameState();
+    });
     hintBtn.addEventListener('click', giveHint);
     tryAgainBtn.addEventListener('click', tryAgain);
     restartGameBtn.addEventListener('click', restartGame);
@@ -349,6 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
         levelContinueBtn.addEventListener('click', () => {
             levelUpModal.classList.add('hidden');
             startNewGame();
+            saveGameState();
         });
     }
 
@@ -394,13 +466,6 @@ document.addEventListener('DOMContentLoaded', () => {
         hapticToggle.addEventListener('change', (e) => {
             isHapticEnabled = e.target.checked;
             localStorage.setItem('sudoku-haptic', isHapticEnabled);
-        });
-    }
-
-    if (levelContinueBtn) {
-        levelContinueBtn.addEventListener('click', () => {
-            levelUpModal.classList.add('hidden');
-            startNewGame();
         });
     }
 
@@ -490,11 +555,13 @@ document.addEventListener('DOMContentLoaded', () => {
         updateHintUI();
         
         startTimer();
+        saveGameState();
     }
 
     function restartGame() {
         gameOverModal.classList.add('hidden');
         startNewGame();
+        saveGameState();
     }
 
     function selectCell(cell) {
@@ -605,6 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cell.classList.remove('user-input');
             SoundEngine.playPop();
             validateBoard();
+            saveGameState();
             return;
         }
 
@@ -665,6 +733,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             validateBoard();
         }
+        saveGameState();
     }
 
     function updateMistakeUI() {
@@ -677,6 +746,7 @@ document.addEventListener('DOMContentLoaded', () => {
         stopTimer();
         StatsEngine.recordGameOver();
         SoundEngine.playGameOver();
+        clearSavedGame();
         gameOverModal.classList.remove('hidden');
     }
 
@@ -765,6 +835,7 @@ document.addEventListener('DOMContentLoaded', () => {
             timerDisplay.style.color = '#4a6fa5'; // Win color
             
             StatsEngine.recordWin(currentLevel, secondsElapsed);
+            clearSavedGame();
             
             // Level up
             currentLevel++;
@@ -790,6 +861,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     alert(`Congratulations! You solved the puzzle in ${timerDisplay.textContent}.\n\nAdvancing to Level ${currentLevel}!`);
                     startNewGame();
+                    saveGameState();
                 }
             }, 100);
         } else {
@@ -822,6 +894,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectCell(lastAction.cell);
         updateUndoUI();
         validateBoard();
+        saveGameState();
     }
 
     function updateUndoUI() {
@@ -876,6 +949,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         hintsRemaining--;
         updateHintUI();
+        saveGameState();
     }
 
     function updateHintUI() {
@@ -895,7 +969,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * Example:
      * - Resets undos to 3, hints to 3, mistakes to 0.
      * - Generates a valid full board using fillGrid().
-     * - Removes cells based on the user's currentLevel (e.g. Level 1 removes 31 cells).
+     * - Removes cells based on difficulty + currentLevel.
      */
     function startNewGame() {
         // Clear any stuck confetti
@@ -934,21 +1008,22 @@ document.addEventListener('DOMContentLoaded', () => {
         // Record that a new real game has started
         StatsEngine.recordGameStarted(currentLevel);
 
-        // 2. Remove cells to create puzzle with progressive difficulty
+        // 2. Remove cells to create puzzle with difficulty-aware logic
         let cellsToRemove;
         let attemptsBuffer = 5;
         
         if (currentLevel === 1) {
             cellsToRemove = 1;
             attemptsBuffer = 0; // Force exactly 1 removal for tutorial
-        } else if (currentLevel === 2) {
-            cellsToRemove = 12; // Extremely easy, ~69 clues
-        } else if (currentLevel === 3) {
-            cellsToRemove = 20; // Very easy, ~61 clues
-        } else if (currentLevel <= 10) {
-            cellsToRemove = 20 + ((currentLevel - 3) * 4); // L4: 24, L5: 28 ... L10: 48
         } else {
-            cellsToRemove = Math.floor(Math.random() * 6) + 51; // Standard Hard, removes 51-56
+            // Use selectedDifficulty to scale removal
+            const difficultyBase = {
+                'easy': { min: 30, max: 38 },
+                'medium': { min: 40, max: 48 },
+                'hard': { min: 50, max: 56 }
+            };
+            const diff = difficultyBase[selectedDifficulty] || difficultyBase['easy'];
+            cellsToRemove = diff.min + Math.floor(Math.random() * (diff.max - diff.min + 1));
         }
 
         // Add a slight buffer to attempts since some removals might break uniqueness and be skipped
@@ -958,6 +1033,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (let i = 0; i < 81; i++) {
             if (grid[i] !== 0) {
                 cells[i].textContent = grid[i];
+                cells[i].dataset.value = grid[i].toString();
                 cells[i].classList.add('prefilled');
             }
         }
@@ -998,6 +1074,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function startTimer() {
         clearInterval(timerInterval);
         secondsElapsed = 0;
+        updateTimerDisplay();
+        timerInterval = setInterval(() => {
+            secondsElapsed++;
+            updateTimerDisplay();
+        }, 1000);
+    }
+
+    function resumeTimer() {
+        clearInterval(timerInterval);
         updateTimerDisplay();
         timerInterval = setInterval(() => {
             secondsElapsed++;
@@ -1129,13 +1214,195 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
     }
 
-    // Initial state
+    // ═══════════════════════════════════════════════
+    //  SAVE / LOAD GAME STATE
+    // ═══════════════════════════════════════════════
+
+    function saveGameState() {
+        try {
+            const cells = Array.from(board.children);
+            const cellStates = cells.map(c => ({
+                value: c.dataset.value || '',
+                notes: c.dataset.notes || '',
+                prefilled: c.classList.contains('prefilled'),
+                userInput: c.classList.contains('user-input')
+            }));
+            const state = {
+                cellStates,
+                solvedGrid: [...solvedGrid],
+                mistakes,
+                undosRemaining,
+                hintsRemaining,
+                secondsElapsed,
+                currentLevel,
+                selectedDifficulty,
+                timestamp: Date.now()
+            };
+            localStorage.setItem('sudoku-saved-game', JSON.stringify(state));
+        } catch (e) {
+            console.warn('Failed to save game state:', e);
+        }
+    }
+
+    function loadSavedGame() {
+        try {
+            const raw = localStorage.getItem('sudoku-saved-game');
+            if (!raw) return null;
+            return JSON.parse(raw);
+        } catch (e) {
+            console.warn('Failed to load saved game:', e);
+            return null;
+        }
+    }
+
+    function hasSavedGame() {
+        return loadSavedGame() !== null;
+    }
+
+    function clearSavedGame() {
+        localStorage.removeItem('sudoku-saved-game');
+    }
+
+    function restoreGame(savedState) {
+        const cells = Array.from(board.children);
+
+        // Restore solved grid
+        solvedGrid = savedState.solvedGrid || [];
+        mistakes = savedState.mistakes || 0;
+        undosRemaining = savedState.undosRemaining != null ? savedState.undosRemaining : MAX_UNDOS;
+        hintsRemaining = savedState.hintsRemaining != null ? savedState.hintsRemaining : MAX_HINTS;
+        secondsElapsed = savedState.secondsElapsed || 0;
+        currentLevel = savedState.currentLevel || currentLevel;
+        undoStack = [];
+
+        // Restore cell states
+        cells.forEach((c, i) => {
+            c.textContent = '';
+            c.dataset.value = '';
+            c.dataset.notes = '';
+            c.classList.remove('prefilled', 'user-input', 'error', 'crosshair', 'tutorial-highlight', 'tutorial-dim', 'locked-group');
+
+            const cs = savedState.cellStates[i];
+            if (!cs) return;
+
+            if (cs.prefilled && cs.value) {
+                c.textContent = cs.value;
+                c.dataset.value = cs.value;
+                c.classList.add('prefilled');
+            } else if (cs.userInput && cs.value) {
+                c.textContent = cs.value;
+                c.dataset.value = cs.value;
+                c.classList.add('user-input');
+            } else if (cs.notes) {
+                c.dataset.notes = cs.notes;
+                renderNotes(c);
+            }
+        });
+
+        updateMistakeUI();
+        updateUndoUI();
+        updateHintUI();
+        updateLevelUI();
+        validateBoard();
+        resumeTimer();
+    }
+
+    // ═══════════════════════════════════════════════
+    //  HOME SCREEN BUTTON BINDINGS
+    // ═══════════════════════════════════════════════
+
+    function updateContinueButton() {
+        if (!continueGameBtn) return;
+        const saved = hasSavedGame();
+        continueGameBtn.disabled = !saved;
+    }
+
+    // Continue Game
+    if (continueGameBtn) {
+        continueGameBtn.addEventListener('click', () => {
+            const saved = loadSavedGame();
+            if (!saved) return;
+            restoreGame(saved);
+            showView('game');
+        });
+    }
+
+    // New Game from Home
+    if (newGameHomeBtn) {
+        newGameHomeBtn.addEventListener('click', () => {
+            startNewGame();
+            saveGameState();
+            showView('game');
+        });
+    }
+
+    // Home Back Button (game screen → home)
+    if (homeBackBtn) {
+        homeBackBtn.addEventListener('click', () => {
+            saveGameState();
+            stopTimer();
+            showView('home');
+        });
+    }
+
+    // Daily Challenge placeholder
+    if (dailyChallengeBtn) {
+        dailyChallengeBtn.addEventListener('click', () => {
+            if (placeholderModal && placeholderModalTitle && placeholderModalMsg) {
+                placeholderModalTitle.textContent = 'Daily Challenge';
+                placeholderModalMsg.textContent = 'Daily Challenge coming next!';
+                placeholderModal.classList.remove('hidden');
+            }
+        });
+    }
+
+    // Home Stats → open existing stats modal
+    if (homeStatsBtn) {
+        homeStatsBtn.addEventListener('click', () => {
+            StatsEngine.updateUI();
+            if (statsModal) statsModal.classList.remove('hidden');
+        });
+    }
+
+    // Achievements placeholder
+    if (achievementsBtn) {
+        achievementsBtn.addEventListener('click', () => {
+            if (placeholderModal && placeholderModalTitle && placeholderModalMsg) {
+                placeholderModalTitle.textContent = 'Achievements';
+                placeholderModalMsg.textContent = 'Achievements coming next!';
+                placeholderModal.classList.remove('hidden');
+            }
+        });
+    }
+
+    // Home Settings → open existing settings modal
+    if (homeSettingsBtn) {
+        homeSettingsBtn.addEventListener('click', () => {
+            if (settingsModal) settingsModal.classList.remove('hidden');
+        });
+    }
+
+    // Placeholder modal close
+    if (placeholderCloseBtn) {
+        placeholderCloseBtn.addEventListener('click', () => {
+            if (placeholderModal) placeholderModal.classList.add('hidden');
+        });
+    }
+
+    // ═══════════════════════════════════════════════
+    //  STARTUP
+    // ═══════════════════════════════════════════════
+
+    // Initialize UI state (but do NOT auto-start a game)
     updateLevelUI();
     updateUndoUI();
     updateHintUI();
-    startNewGame();
+    updateContinueButton();
 
-    // Auto-launch tutorial on first visit
+    // Show home screen as initial view
+    showView('home');
+
+    // Auto-launch tutorial on first visit (will show over home screen)
     if (!localStorage.getItem('sudoku-tutorial-seen')) {
         showTutorial();
         localStorage.setItem('sudoku-tutorial-seen', 'true');
