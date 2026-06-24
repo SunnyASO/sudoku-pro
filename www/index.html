@@ -277,16 +277,35 @@
         </div>
     </div>
 
-    <!-- Placeholder Modal (Daily Challenge / Achievements) -->
-    <div id="placeholder-modal" class="modal hidden">
-        <div class="modal-content" style="max-width: 340px;">
-            <h2 id="placeholder-modal-title">Coming Soon</h2>
-            <p id="placeholder-modal-msg" style="font-size: 16px; margin-bottom: 20px;">This feature is coming next!</p>
-            <div class="modal-buttons">
-                <button id="placeholder-close-btn" class="btn">OK</button>
+    <!-- Daily Challenge Modal -->
+    <div id="daily-challenge-modal" class="modal hidden">
+        <div class="modal-content daily-content">
+            <button id="close-daily-btn" class="icon-btn close-btn" title="Close">✖</button>
+            <h2>Daily Challenge</h2>
+            <div id="daily-date-display" class="daily-date"></div>
+            <div id="daily-status-display" class="daily-status"></div>
+            <div class="daily-diff-row">
+                <span class="daily-diff-label">Difficulty:</span>
+                <span id="daily-diff-value" class="daily-diff-value">Medium</span>
+            </div>
+            <div class="modal-buttons" style="margin-top: 24px; flex-direction: column; gap: 10px;">
+                <button id="daily-play-btn" class="btn" style="width: 100%;">▶ Play Today</button>
             </div>
         </div>
     </div>
+
+    <!-- Achievements Modal -->
+    <div id="achievements-modal" class="modal hidden">
+        <div class="modal-content achievements-content">
+            <button id="close-achievements-btn" class="icon-btn close-btn" title="Close">✖</button>
+            <h2>Achievements</h2>
+            <div id="achievements-list" class="achievements-list">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
+
+
 
     <!-- Dedicated Confetti Canvas -->
     <canvas id="confetti-canvas" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; pointer-events: none; z-index: 2000;"></canvas>

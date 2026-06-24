@@ -49,6 +49,277 @@ document.addEventListener('DOMContentLoaded', () => {
     updateDifficultyUI();
 
     // ═══════════════════════════════════════════════
+    //  GAME MODE STATE
+    // ═══════════════════════════════════════════════
+
+    let isDailyChallenge = false;   // true when playing today's daily puzzle
+    let hintsUsedThisGame = 0;      // track for No-Help achievement
+    let mistakesThisGame = 0;       // track for Perfect Solve achievement
+
+    // ═══════════════════════════════════════════════
+    //  DAILY CHALLENGE ENGINE
+    // ═══════════════════════════════════════════════
+
+    const DailyChallengeEngine = {
+        // Returns today's date as 'YYYY-MM-DD'
+        todayKey() {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        },
+
+        // Seeded pseudo-random number generator (mulberry32)
+        seededRng(seed) {
+            return function() {
+                seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+                let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+                t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+                return ((t ^ t >>> 14) >>> 0) / 4294967296;
+            };
+        },
+
+        // Convert date string to a numeric seed
+        dateSeed(dateKey) {
+            return dateKey.split('-').reduce((acc, p) => acc * 10000 + parseInt(p), 0);
+        },
+
+        // Generate deterministic puzzle for a given date
+        generateForDate(dateKey) {
+            const seed = this.dateSeed(dateKey);
+            const rng = this.seededRng(seed);
+
+            // Seeded shuffle
+            function shuffle(arr) {
+                for (let i = arr.length - 1; i > 0; i--) {
+                    const j = Math.floor(rng() * (i + 1));
+                    [arr[i], arr[j]] = [arr[j], arr[i]];
+                }
+                return arr;
+            }
+
+            // Seeded fillGrid
+            function isValidLocal(g, idx, num) {
+                const row = Math.floor(idx / 9);
+                const col = idx % 9;
+                for (let i = 0; i < 9; i++) {
+                    if (g[row*9+i] === num || g[i*9+col] === num) return false;
+                }
+                const sr = Math.floor(row/3)*3, sc = Math.floor(col/3)*3;
+                for (let i = 0; i < 3; i++)
+                    for (let j = 0; j < 3; j++)
+                        if (g[(sr+i)*9+(sc+j)] === num) return false;
+                return true;
+            }
+
+            function fillLocal(g) {
+                for (let i = 0; i < 81; i++) {
+                    if (g[i] === 0) {
+                        const nums = shuffle([1,2,3,4,5,6,7,8,9]);
+                        for (const num of nums) {
+                            if (isValidLocal(g, i, num)) {
+                                g[i] = num;
+                                if (fillLocal(g)) return true;
+                                g[i] = 0;
+                            }
+                        }
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            const grid = new Array(81).fill(0);
+            fillLocal(grid);
+            const solved = [...grid];
+
+            // Daily uses medium difficulty: 40-45 removals
+            const removals = 40 + Math.floor(rng() * 6);
+            // Simple seeded removal (no uniqueness check for speed; daily is always valid)
+            const indices = shuffle([...Array(81).keys()]);
+            let removed = 0;
+            for (const idx of indices) {
+                if (removed >= removals) break;
+                grid[idx] = 0;
+                removed++;
+            }
+
+            return { grid, solved };
+        },
+
+        getCompletionKey(dateKey) {
+            return `sudoku-daily-done-${dateKey}`;
+        },
+
+        isCompleted(dateKey) {
+            return localStorage.getItem(this.getCompletionKey(dateKey)) === 'true';
+        },
+
+        markCompleted(dateKey) {
+            localStorage.setItem(this.getCompletionKey(dateKey), 'true');
+        },
+
+        openModal() {
+            const modal = document.getElementById('daily-challenge-modal');
+            const dateDisp = document.getElementById('daily-date-display');
+            const statusDisp = document.getElementById('daily-status-display');
+            const diffDisp = document.getElementById('daily-diff-value');
+
+            if (!modal) return;
+
+            const todayKey = this.todayKey();
+            const completed = this.isCompleted(todayKey);
+
+            // Format date nicely
+            const d = new Date();
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            if (dateDisp) dateDisp.textContent = d.toLocaleDateString(undefined, options);
+            if (diffDisp) diffDisp.textContent = 'Medium';
+
+            if (statusDisp) {
+                if (completed) {
+                    statusDisp.textContent = '✅ Completed!';
+                    statusDisp.className = 'daily-status completed';
+                } else {
+                    statusDisp.textContent = 'Not yet played today';
+                    statusDisp.className = 'daily-status';
+                }
+            }
+
+            const playBtn = document.getElementById('daily-play-btn');
+            if (playBtn) {
+                playBtn.textContent = completed ? '▶ Play Again' : '▶ Play Today';
+            }
+
+            modal.classList.remove('hidden');
+        }
+    };
+
+    // ═══════════════════════════════════════════════
+    //  ACHIEVEMENTS ENGINE
+    // ═══════════════════════════════════════════════
+
+    const AchievementsEngine = {
+        definitions: [
+            {
+                id: 'first-win',
+                icon: '🥇',
+                title: 'First Win',
+                desc: 'Complete your first puzzle',
+                check: (stats, daily) => stats.gamesWon >= 1,
+                progress: (stats) => `${Math.min(stats.gamesWon, 1)} / 1`
+            },
+            {
+                id: 'beginner',
+                icon: '🌱',
+                title: 'Puzzle Beginner',
+                desc: 'Complete 5 puzzles',
+                check: (stats) => stats.gamesWon >= 5,
+                progress: (stats) => `${Math.min(stats.gamesWon, 5)} / 5`
+            },
+            {
+                id: 'solver',
+                icon: '🧩',
+                title: 'Sudoku Solver',
+                desc: 'Complete 10 puzzles',
+                check: (stats) => stats.gamesWon >= 10,
+                progress: (stats) => `${Math.min(stats.gamesWon, 10)} / 10`
+            },
+            {
+                id: 'perfect',
+                icon: '✨',
+                title: 'Perfect Solve',
+                desc: 'Complete a puzzle with 0 mistakes',
+                check: (stats, daily, flags) => flags.perfectSolve === true,
+                progress: null
+            },
+            {
+                id: 'no-hints',
+                icon: '🚫💡',
+                title: 'No Help Needed',
+                desc: 'Complete a puzzle without using a hint',
+                check: (stats, daily, flags) => flags.noHints === true,
+                progress: null
+            },
+            {
+                id: 'daily-solver',
+                icon: '📅',
+                title: 'Daily Solver',
+                desc: 'Complete one Daily Challenge',
+                check: (stats, daily) => daily.anyCompleted,
+                progress: null
+            }
+        ],
+
+        getUnlocked() {
+            const raw = localStorage.getItem('sudoku-achievements-unlocked');
+            return raw ? JSON.parse(raw) : {};
+        },
+
+        saveUnlocked(unlocked) {
+            localStorage.setItem('sudoku-achievements-unlocked', JSON.stringify(unlocked));
+        },
+
+        // Call after every win
+        onWin(flags) {
+            const stats = StatsEngine.stats;
+            // Check if any daily ever completed
+            const anyDailyKey = Object.keys(localStorage)
+                .some(k => k.startsWith('sudoku-daily-done-') && localStorage.getItem(k) === 'true');
+            const daily = { anyCompleted: anyDailyKey };
+
+            const unlocked = this.getUnlocked();
+            let newUnlocks = [];
+
+            this.definitions.forEach(def => {
+                if (!unlocked[def.id] && def.check(stats, daily, flags || {})) {
+                    unlocked[def.id] = Date.now();
+                    newUnlocks.push(def.title);
+                }
+            });
+
+            if (newUnlocks.length > 0) {
+                this.saveUnlocked(unlocked);
+            }
+        },
+
+        renderModal() {
+            const list = document.getElementById('achievements-list');
+            if (!list) return;
+
+            const stats = StatsEngine.stats;
+            const anyDailyKey = Object.keys(localStorage)
+                .some(k => k.startsWith('sudoku-daily-done-') && localStorage.getItem(k) === 'true');
+            const daily = { anyCompleted: anyDailyKey };
+            const unlocked = this.getUnlocked();
+
+            list.innerHTML = '';
+            this.definitions.forEach(def => {
+                const isUnlocked = !!unlocked[def.id];
+                const item = document.createElement('div');
+                item.className = `achievement-item${isUnlocked ? '' : ' locked'}`;
+
+                const progressStr = (!isUnlocked && def.progress) ? def.progress(stats) : '';
+
+                item.innerHTML = `
+                    <div class="achievement-icon">${def.icon}</div>
+                    <div class="achievement-info">
+                        <div class="achievement-title">${def.title}</div>
+                        <div class="achievement-desc">${def.desc}</div>
+                        ${progressStr ? `<div class="achievement-progress">${progressStr}</div>` : ''}
+                    </div>
+                    <div class="achievement-check">${isUnlocked ? '✓' : ''}</div>
+                `;
+                list.appendChild(item);
+            });
+        },
+
+        openModal() {
+            this.renderModal();
+            const modal = document.getElementById('achievements-modal');
+            if (modal) modal.classList.remove('hidden');
+        }
+    };
+
+    // ═══════════════════════════════════════════════
     //  GAME ENGINE REFERENCES
     // ═══════════════════════════════════════════════
 
@@ -146,7 +417,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateLevelUI() {
         if (levelDisplay) {
-            levelDisplay.textContent = `Level ${currentLevel}`;
+            // Preserve existing difficulty badge if present
+            const existingBadge = levelDisplay.querySelector('.difficulty-badge');
+            if (existingBadge) {
+                // Replace text node only, keep badge
+                levelDisplay.childNodes[0].nodeValue = `Level ${currentLevel} `;
+            } else {
+                levelDisplay.textContent = `Level ${currentLevel}`;
+            }
         }
         if (levelProgressFill) {
             const progress = ((currentLevel - 1) % 5) * 20;
@@ -706,6 +984,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const correctValue = solvedGrid[cell.dataset.index].toString();
             if (value !== correctValue) {
                 mistakes++;
+                mistakesThisGame++;
                 SoundEngine.playBuzz();
                 if (isHapticEnabled && navigator.vibrate) navigator.vibrate(200);
                 updateMistakeUI();
@@ -833,19 +1112,33 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isFull && !hasErrors) {
             stopTimer();
             timerDisplay.style.color = '#4a6fa5'; // Win color
-            
+
             StatsEngine.recordWin(currentLevel, secondsElapsed);
             clearSavedGame();
-            
-            // Level up
-            currentLevel++;
-            localStorage.setItem('sudoku-level', currentLevel);
+
+            // Mark daily challenge completed if applicable
+            if (isDailyChallenge) {
+                DailyChallengeEngine.markCompleted(DailyChallengeEngine.todayKey());
+            }
+
+            // Fire achievement checks
+            const winFlags = {
+                perfectSolve: mistakesThisGame === 0,
+                noHints: hintsUsedThisGame === 0
+            };
+            AchievementsEngine.onWin(winFlags);
+
+            // Level up (only for non-daily games)
+            if (!isDailyChallenge) {
+                currentLevel++;
+                localStorage.setItem('sudoku-level', currentLevel);
+            }
 
             SoundEngine.playVictory();
             // Small timeout to allow UI to render the last number before alerting
             setTimeout(() => {
                 updateLevelUI();
-                
+
                 // Fire confetti!
                 if (myConfetti) {
                     myConfetti({
@@ -854,12 +1147,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         origin: { y: 0.6 }
                     });
                 }
-                
+
                 if (levelUpModal && levelUpText) {
-                    levelUpText.textContent = `You reached Level ${currentLevel}`;
+                    levelUpText.textContent = isDailyChallenge
+                        ? 'Daily Challenge Complete! 🎉'
+                        : `You reached Level ${currentLevel}`;
                     levelUpModal.classList.remove('hidden');
                 } else {
-                    alert(`Congratulations! You solved the puzzle in ${timerDisplay.textContent}.\n\nAdvancing to Level ${currentLevel}!`);
+                    alert(`Congratulations! Puzzle solved in ${timerDisplay.textContent}.`);
                     startNewGame();
                     saveGameState();
                 }
@@ -948,6 +1243,7 @@ document.addEventListener('DOMContentLoaded', () => {
         validateBoard();
 
         hintsRemaining--;
+        hintsUsedThisGame++;
         updateHintUI();
         saveGameState();
     }
@@ -971,11 +1267,16 @@ document.addEventListener('DOMContentLoaded', () => {
      * - Generates a valid full board using fillGrid().
      * - Removes cells based on difficulty + currentLevel.
      */
-    function startNewGame() {
+    function startNewGame(dailyData) {
         // Clear any stuck confetti
         if (myConfetti) {
             myConfetti.reset();
         }
+
+        // Reset per-game tracking
+        isDailyChallenge = !!dailyData;
+        hintsUsedThisGame = 0;
+        mistakesThisGame = 0;
 
         // Reset state
         undoStack = [];
@@ -998,36 +1299,49 @@ document.addEventListener('DOMContentLoaded', () => {
             c.classList.remove('prefilled', 'user-input', 'error', 'crosshair', 'tutorial-highlight', 'tutorial-dim', 'locked-group');
         });
 
-        // 1. Generate full solved board
-        const grid = new Array(81).fill(0);
-        fillGrid(grid);
-        
-        // Save the solved grid for hints
-        solvedGrid = [...grid];
+        let grid, diffLabel, badgeClass;
 
-        // Record that a new real game has started
-        StatsEngine.recordGameStarted(currentLevel);
-
-        // 2. Remove cells to create puzzle with difficulty-aware logic
-        let cellsToRemove;
-        let attemptsBuffer = 5;
-        
-        if (currentLevel === 1) {
-            cellsToRemove = 1;
-            attemptsBuffer = 0; // Force exactly 1 removal for tutorial
+        if (dailyData) {
+            // Daily Challenge: use pre-generated deterministic puzzle
+            grid = [...dailyData.grid];
+            solvedGrid = [...dailyData.solved];
+            diffLabel = 'Daily';
+            badgeClass = 'diff-badge-daily';
+            console.log('Game: starting Daily Challenge puzzle');
         } else {
-            // Use selectedDifficulty to scale removal
-            const difficultyBase = {
-                'easy': { min: 30, max: 38 },
-                'medium': { min: 40, max: 48 },
-                'hard': { min: 50, max: 56 }
-            };
-            const diff = difficultyBase[selectedDifficulty] || difficultyBase['easy'];
-            cellsToRemove = diff.min + Math.floor(Math.random() * (diff.max - diff.min + 1));
-        }
+            // 1. Generate full solved board
+            grid = new Array(81).fill(0);
+            fillGrid(grid);
+            solvedGrid = [...grid];
 
-        // Add a slight buffer to attempts since some removals might break uniqueness and be skipped
-        removeCells(grid, cellsToRemove + attemptsBuffer);
+            // Record that a new real game has started
+            StatsEngine.recordGameStarted(currentLevel);
+
+            // 2. Remove cells to create puzzle with difficulty-aware logic
+            let cellsToRemove;
+            let attemptsBuffer = 5;
+
+            if (currentLevel === 1) {
+                cellsToRemove = 1;
+                attemptsBuffer = 0; // Force exactly 1 removal for tutorial
+                diffLabel = 'Easy';
+                badgeClass = 'diff-badge-easy';
+            } else {
+                const difficultyBase = {
+                    'easy':   { min: 30, max: 38, label: 'Easy',   badge: 'diff-badge-easy' },
+                    'medium': { min: 40, max: 48, label: 'Medium', badge: 'diff-badge-medium' },
+                    'hard':   { min: 50, max: 56, label: 'Hard',   badge: 'diff-badge-hard' }
+                };
+                const diff = difficultyBase[selectedDifficulty] || difficultyBase['easy'];
+                cellsToRemove = diff.min + Math.floor(Math.random() * (diff.max - diff.min + 1));
+                diffLabel = diff.label;
+                badgeClass = diff.badge;
+                console.log(`Game: starting ${diff.label} puzzle (removing ${cellsToRemove} cells)`);
+            }
+
+            // Add a slight buffer to attempts since some removals might break uniqueness and be skipped
+            removeCells(grid, cellsToRemove + attemptsBuffer);
+        }
 
         // 3. Render
         for (let i = 0; i < 81; i++) {
@@ -1037,19 +1351,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 cells[i].classList.add('prefilled');
             }
         }
-        
-        // 4. Tutorial Highlight for Level 1
-        if (currentLevel === 1) {
+
+        // 4. Update difficulty badge in game header
+        if (levelDisplay) {
+            levelDisplay.innerHTML = `Level ${currentLevel} <span class="difficulty-badge ${badgeClass}">${diffLabel}</span>`;
+        }
+
+        // 5. Tutorial Highlight for Level 1
+        if (currentLevel === 1 && !dailyData) {
             const emptyIndex = grid.indexOf(0);
             if (emptyIndex !== -1) {
                 const row = Math.floor(emptyIndex / 9);
                 const col = emptyIndex % 9;
                 const startRow = Math.floor(row / 3) * 3;
                 const startCol = Math.floor(col / 3) * 3;
-                
-                // Keep track of which cells are in the target block
+
                 const targetCells = new Set();
-                
                 for (let i = 0; i < 3; i++) {
                     for (let j = 0; j < 3; j++) {
                         const cellIndex = (startRow + i) * 9 + (startCol + j);
@@ -1057,16 +1374,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         targetCells.add(cellIndex);
                     }
                 }
-                
-                // Dim all other cells on the board
                 for (let i = 0; i < 81; i++) {
-                    if (!targetCells.has(i)) {
-                        cells[i].classList.add('tutorial-dim');
-                    }
+                    if (!targetCells.has(i)) cells[i].classList.add('tutorial-dim');
                 }
             }
         }
-        
+
         startTimer();
     }
 
@@ -1236,6 +1549,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 secondsElapsed,
                 currentLevel,
                 selectedDifficulty,
+                isDailyChallenge,
+                hintsUsedThisGame,
+                mistakesThisGame,
                 timestamp: Date.now()
             };
             localStorage.setItem('sudoku-saved-game', JSON.stringify(state));
@@ -1273,7 +1589,16 @@ document.addEventListener('DOMContentLoaded', () => {
         hintsRemaining = savedState.hintsRemaining != null ? savedState.hintsRemaining : MAX_HINTS;
         secondsElapsed = savedState.secondsElapsed || 0;
         currentLevel = savedState.currentLevel || currentLevel;
+        isDailyChallenge = savedState.isDailyChallenge || false;
+        hintsUsedThisGame = savedState.hintsUsedThisGame || 0;
+        mistakesThisGame = savedState.mistakesThisGame || 0;
         undoStack = [];
+
+        // Restore difficulty selection
+        if (savedState.selectedDifficulty) {
+            selectedDifficulty = savedState.selectedDifficulty;
+            updateDifficultyUI();
+        }
 
         // Restore cell states
         cells.forEach((c, i) => {
@@ -1298,6 +1623,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderNotes(c);
             }
         });
+
+        // Restore difficulty badge
+        const badgeMap = {
+            'easy': { label: 'Easy', cls: 'diff-badge-easy' },
+            'medium': { label: 'Medium', cls: 'diff-badge-medium' },
+            'hard': { label: 'Hard', cls: 'diff-badge-hard' }
+        };
+        if (levelDisplay) {
+            if (isDailyChallenge) {
+                levelDisplay.innerHTML = `Level ${currentLevel} <span class="difficulty-badge diff-badge-daily">Daily</span>`;
+            } else {
+                const b = badgeMap[selectedDifficulty] || badgeMap['easy'];
+                levelDisplay.innerHTML = `Level ${currentLevel} <span class="difficulty-badge ${b.cls}">${b.label}</span>`;
+            }
+        }
 
         updateMistakeUI();
         updateUndoUI();
@@ -1345,14 +1685,38 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Daily Challenge placeholder
+    // Daily Challenge — real engine
+    const dailyChallengeModal = document.getElementById('daily-challenge-modal');
+    const closeDailyBtn = document.getElementById('close-daily-btn');
+    const dailyPlayBtn = document.getElementById('daily-play-btn');
+
     if (dailyChallengeBtn) {
         dailyChallengeBtn.addEventListener('click', () => {
-            if (placeholderModal && placeholderModalTitle && placeholderModalMsg) {
-                placeholderModalTitle.textContent = 'Daily Challenge';
-                placeholderModalMsg.textContent = 'Daily Challenge coming next!';
-                placeholderModal.classList.remove('hidden');
+            DailyChallengeEngine.openModal();
+        });
+    }
+
+    if (closeDailyBtn) {
+        closeDailyBtn.addEventListener('click', () => {
+            if (dailyChallengeModal) dailyChallengeModal.classList.add('hidden');
+        });
+    }
+
+    if (dailyPlayBtn) {
+        dailyPlayBtn.addEventListener('click', () => {
+            if (dailyChallengeModal) dailyChallengeModal.classList.add('hidden');
+
+            // Warn if normal game in progress
+            const saved = loadSavedGame();
+            if (saved && !saved.isDailyChallenge) {
+                if (!confirm('Starting the Daily Challenge will pause your current game. Continue?')) return;
             }
+
+            const todayKey = DailyChallengeEngine.todayKey();
+            const dailyData = DailyChallengeEngine.generateForDate(todayKey);
+            startNewGame(dailyData);
+            saveGameState();
+            showView('game');
         });
     }
 
@@ -1364,14 +1728,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Achievements placeholder
+    // Achievements — real engine
+    const achievementsModal = document.getElementById('achievements-modal');
+    const closeAchievementsBtn = document.getElementById('close-achievements-btn');
+
     if (achievementsBtn) {
         achievementsBtn.addEventListener('click', () => {
-            if (placeholderModal && placeholderModalTitle && placeholderModalMsg) {
-                placeholderModalTitle.textContent = 'Achievements';
-                placeholderModalMsg.textContent = 'Achievements coming next!';
-                placeholderModal.classList.remove('hidden');
-            }
+            AchievementsEngine.openModal();
+        });
+    }
+
+    if (closeAchievementsBtn) {
+        closeAchievementsBtn.addEventListener('click', () => {
+            if (achievementsModal) achievementsModal.classList.add('hidden');
         });
     }
 
@@ -1379,13 +1748,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (homeSettingsBtn) {
         homeSettingsBtn.addEventListener('click', () => {
             if (settingsModal) settingsModal.classList.remove('hidden');
-        });
-    }
-
-    // Placeholder modal close
-    if (placeholderCloseBtn) {
-        placeholderCloseBtn.addEventListener('click', () => {
-            if (placeholderModal) placeholderModal.classList.add('hidden');
         });
     }
 
