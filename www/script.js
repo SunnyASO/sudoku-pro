@@ -385,6 +385,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const homeSettingsBtn = document.getElementById('home-settings-btn');
     const homeBackBtn = document.getElementById('home-back-btn');
 
+    // Pause
+    const gamePauseBtn = document.getElementById('game-pause-btn');
+    const pauseModal = document.getElementById('pause-modal');
+    const pauseResumeBtn = document.getElementById('pause-resume-btn');
+    const pauseHomeBtn = document.getElementById('pause-home-btn');
+
     // Placeholder modal
     const placeholderModal = document.getElementById('placeholder-modal');
     const placeholderModalTitle = document.getElementById('placeholder-modal-title');
@@ -415,16 +421,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentLevel = parseInt(localStorage.getItem('sudoku-level')) || 1;
 
+    let isPaused = false;
+
+    function pauseGame() {
+        if (isPaused) return;
+        isPaused = true;
+        stopTimer();
+        gameScreen.classList.add('paused');
+        if (gamePauseBtn) gamePauseBtn.textContent = '▶';
+        if (pauseModal) pauseModal.classList.remove('hidden');
+    }
+
+    function resumeGame() {
+        if (!isPaused) return;
+        isPaused = false;
+        gameScreen.classList.remove('paused');
+        if (gamePauseBtn) gamePauseBtn.textContent = '⏸';
+        if (pauseModal) pauseModal.classList.add('hidden');
+        resumeTimer();
+    }
+
     function updateLevelUI() {
         if (levelDisplay) {
-            // Preserve existing difficulty badge if present
-            const existingBadge = levelDisplay.querySelector('.difficulty-badge');
-            if (existingBadge) {
-                // Replace text node only, keep badge
-                levelDisplay.childNodes[0].nodeValue = `Level ${currentLevel} `;
-            } else {
-                levelDisplay.textContent = `Level ${currentLevel}`;
-            }
+            levelDisplay.textContent = `Level ${currentLevel}`;
         }
         if (levelProgressFill) {
             const progress = ((currentLevel - 1) % 5) * 20;
@@ -1278,6 +1297,14 @@ document.addEventListener('DOMContentLoaded', () => {
         hintsUsedThisGame = 0;
         mistakesThisGame = 0;
 
+        // Clear pause state
+        if (isPaused) {
+            isPaused = false;
+            gameScreen.classList.remove('paused');
+            if (gamePauseBtn) gamePauseBtn.textContent = '⏸';
+            if (pauseModal) pauseModal.classList.add('hidden');
+        }
+
         // Reset state
         undoStack = [];
         undosRemaining = MAX_UNDOS;
@@ -1301,6 +1328,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let grid, diffLabel, badgeClass;
 
+        const finishRender = () => {
+            // 3. Render
+            for (let i = 0; i < 81; i++) {
+                if (grid[i] !== 0) {
+                    cells[i].textContent = grid[i];
+                    cells[i].dataset.value = grid[i].toString();
+                    cells[i].classList.add('prefilled');
+                }
+            }
+
+            // 4. Update difficulty badge in separate row beneath level
+            const badgeRow = document.getElementById('difficulty-badge-row');
+            if (badgeRow) {
+                badgeRow.innerHTML = `<span class="difficulty-badge ${badgeClass}">${diffLabel}</span>`;
+            }
+            if (levelDisplay) {
+                levelDisplay.textContent = `Level ${currentLevel}`;
+            }
+
+            // 5. Tutorial Highlight for Level 1
+            if (currentLevel === 1 && !dailyData) {
+                const emptyIndex = grid.indexOf(0);
+                if (emptyIndex !== -1) {
+                    const row = Math.floor(emptyIndex / 9);
+                    const col = emptyIndex % 9;
+                    const startRow = Math.floor(row / 3) * 3;
+                    const startCol = Math.floor(col / 3) * 3;
+
+                    const targetCells = new Set();
+                    for (let i = 0; i < 3; i++) {
+                        for (let j = 0; j < 3; j++) {
+                            const cellIndex = (startRow + i) * 9 + (startCol + j);
+                            cells[cellIndex].classList.add('tutorial-highlight');
+                            targetCells.add(cellIndex);
+                        }
+                    }
+                    for (let i = 0; i < 81; i++) {
+                        if (!targetCells.has(i)) cells[i].classList.add('tutorial-dim');
+                    }
+                }
+            }
+
+            startTimer();
+        };
+
         if (dailyData) {
             // Daily Challenge: use pre-generated deterministic puzzle
             grid = [...dailyData.grid];
@@ -1308,79 +1380,45 @@ document.addEventListener('DOMContentLoaded', () => {
             diffLabel = 'Daily';
             badgeClass = 'diff-badge-daily';
             console.log('Game: starting Daily Challenge puzzle');
+            finishRender();
         } else {
-            // 1. Generate full solved board
-            grid = new Array(81).fill(0);
-            fillGrid(grid);
-            solvedGrid = [...grid];
-
             // Record that a new real game has started
             StatsEngine.recordGameStarted(currentLevel);
 
-            // 2. Remove cells to create puzzle with difficulty-aware logic
-            let cellsToRemove;
-            let attemptsBuffer = 5;
-
             if (currentLevel === 1) {
-                cellsToRemove = 1;
-                attemptsBuffer = 0; // Force exactly 1 removal for tutorial
+                // Tutorial: easy single-cell removal, no rating needed
+                const solved = new Array(81).fill(0);
+                fillGrid(solved);
+                solvedGrid = [...solved];
+                grid = [...solved];
+                PuzzleMaker.removeCellsUnique(grid, 1);
                 diffLabel = 'Easy';
                 badgeClass = 'diff-badge-easy';
+                console.log('Game: starting Tutorial puzzle (Level 1, 1 cell removed)');
+                finishRender();
             } else {
-                const difficultyBase = {
-                    'easy':   { min: 30, max: 38, label: 'Easy',   badge: 'diff-badge-easy' },
-                    'medium': { min: 40, max: 48, label: 'Medium', badge: 'diff-badge-medium' },
-                    'hard':   { min: 50, max: 56, label: 'Hard',   badge: 'diff-badge-hard' }
-                };
-                const diff = difficultyBase[selectedDifficulty] || difficultyBase['easy'];
-                cellsToRemove = diff.min + Math.floor(Math.random() * (diff.max - diff.min + 1));
-                diffLabel = diff.label;
-                badgeClass = diff.badge;
-                console.log(`Game: starting ${diff.label} puzzle (removing ${cellsToRemove} cells)`);
-            }
+                // Show a loading/generating state on the board briefly
+                cells.forEach(c => c.textContent = '');
+                if (levelDisplay) levelDisplay.textContent = 'Generating...';
 
-            // Add a slight buffer to attempts since some removals might break uniqueness and be skipped
-            removeCells(grid, cellsToRemove + attemptsBuffer);
-        }
-
-        // 3. Render
-        for (let i = 0; i < 81; i++) {
-            if (grid[i] !== 0) {
-                cells[i].textContent = grid[i];
-                cells[i].dataset.value = grid[i].toString();
-                cells[i].classList.add('prefilled');
+                // Yield to the browser so the "Generating..." UI can render
+                setTimeout(() => {
+                    const result = PuzzleMaker.generate(selectedDifficulty);
+                    grid = result.grid;
+                    solvedGrid = result.solved;
+                    const labels = {
+                        easy:   { label: 'Easy',   badge: 'diff-badge-easy' },
+                        medium: { label: 'Medium', badge: 'diff-badge-medium' },
+                        hard:   { label: 'Hard',   badge: 'diff-badge-hard' }
+                    };
+                    const d = labels[selectedDifficulty] || labels.easy;
+                    diffLabel = d.label;
+                    badgeClass = d.badge;
+                    
+                    finishRender();
+                }, 10);
             }
         }
-
-        // 4. Update difficulty badge in game header
-        if (levelDisplay) {
-            levelDisplay.innerHTML = `Level ${currentLevel} <span class="difficulty-badge ${badgeClass}">${diffLabel}</span>`;
-        }
-
-        // 5. Tutorial Highlight for Level 1
-        if (currentLevel === 1 && !dailyData) {
-            const emptyIndex = grid.indexOf(0);
-            if (emptyIndex !== -1) {
-                const row = Math.floor(emptyIndex / 9);
-                const col = emptyIndex % 9;
-                const startRow = Math.floor(row / 3) * 3;
-                const startCol = Math.floor(col / 3) * 3;
-
-                const targetCells = new Set();
-                for (let i = 0; i < 3; i++) {
-                    for (let j = 0; j < 3; j++) {
-                        const cellIndex = (startRow + i) * 9 + (startCol + j);
-                        cells[cellIndex].classList.add('tutorial-highlight');
-                        targetCells.add(cellIndex);
-                    }
-                }
-                for (let i = 0; i < 81; i++) {
-                    if (!targetCells.has(i)) cells[i].classList.add('tutorial-dim');
-                }
-            }
-        }
-
-        startTimer();
     }
 
     // --- Timer Logic ---
@@ -1442,58 +1480,391 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Digs holes in a fully solved grid to create a playable puzzle.
-     * It ensures the resulting puzzle still has exactly ONE unique solution.
-     * 
-     * @param {number[]} grid - The fully solved 1D array board.
-     * @param {number} attempts - The number of cells the algorithm should attempt to remove.
-     * 
-     * Example:
-     * removeCells(mySolvedGrid, 40);
-     * // mySolvedGrid now has ~40 cells set to 0, ready to be played.
+     * PuzzleMaker — generates uniquely-solvable Sudoku puzzles rated by
+     * logical solving techniques, not just clue count.
+     *
+     * Techniques tracked (weakest → hardest):
+     *   0. Naked Single    — one candidate for a cell
+     *   1. Hidden Single   — one candidate for a digit in row/col/box
+     *   2. Locked Candidates — box-line intersection elimination
+     *   3. Naked Pair      — two cells in a unit sharing exactly two candidates
+     *   4. Expert+         — unresolved by above; puzzle still has unique solution
+     *
+     * Rating bands:
+     *   easy:   hardest === 0  (naked singles only)
+     *   medium: hardest 1–2    (hidden singles / locked candidates)
+     *   hard:   hardest >= 3   (naked pairs or expert+)
+     *
+     * Generation time guard: 400 ms per difficulty call (prevents UI freeze).
      */
-    function removeCells(grid, attempts) {
-        while (attempts > 0) {
-            let row = Math.floor(Math.random() * 9);
-            let col = Math.floor(Math.random() * 9);
-            let index = row * 9 + col;
-            
-            while (grid[index] === 0) {
-                row = Math.floor(Math.random() * 9);
-                col = Math.floor(Math.random() * 9);
-                index = row * 9 + col;
-            }
-            
-            let backup = grid[index];
-            grid[index] = 0;
-            
-            let copyGrid = [...grid];
-            let solutions = 0;
-            
-            function countSolutions(g) {
+    const PuzzleMaker = {
+
+        // ── Uniqueness check (MRV-guided backtracker, stops at `limit`) ──────
+        countSolutions(grid, limit = 2) {
+            const g = [...grid];
+            let count = 0;
+            function solve() {
+                let best = -1, bestCnt = 10;
                 for (let i = 0; i < 81; i++) {
-                    if (g[i] === 0) {
-                        for (let num = 1; num <= 9; num++) {
-                            if (isValid(g, i, num)) {
-                                g[i] = num;
-                                countSolutions(g);
-                                g[i] = 0;
-                            }
+                    if (g[i] !== 0) continue;
+                    let cnt = 0;
+                    for (let n = 1; n <= 9; n++) if (isValid(g, i, n)) cnt++;
+                    if (cnt === 0) return;   // dead end
+                    if (cnt < bestCnt) { bestCnt = cnt; best = i; }
+                    if (bestCnt === 1) break; // can't do better
+                }
+                if (best === -1) { count++; return; } // all filled = solution
+                for (let n = 1; n <= 9; n++) {
+                    if (!isValid(g, best, n)) continue;
+                    g[best] = n;
+                    solve();
+                    g[best] = 0;
+                    if (count >= limit) return;
+                }
+            }
+            solve();
+            return count;
+        },
+
+        // ── Remove cells ensuring unique solution ─────────────────────────────
+        removeCellsUnique(grid, targetRemove) {
+            const indices = [...Array(81).keys()].sort(() => Math.random() - 0.5);
+            let removed = 0;
+            for (const idx of indices) {
+                if (removed >= targetRemove) break;
+                if (grid[idx] === 0) continue;
+                const backup = grid[idx];
+                grid[idx] = 0;
+                if (this.countSolutions(grid, 2) === 1) {
+                    removed++;
+                } else {
+                    grid[idx] = backup; // restore — would break uniqueness
+                }
+            }
+            return removed;
+        },
+
+        // ── Candidate set builder ─────────────────────────────────────────────
+        getCandidates(grid) {
+            const cands = Array.from({length: 81}, () => new Set());
+            for (let i = 0; i < 81; i++) {
+                if (grid[i] !== 0) continue;
+                for (let n = 1; n <= 9; n++) {
+                    if (isValid(grid, i, n)) cands[i].add(n);
+                }
+            }
+            return cands;
+        },
+
+        // ── Logical difficulty rater ──────────────────────────────────────────
+        // Returns: { rating, techName, solved, hardest, remainingUnsolvedCells }
+        rateLogical(puzzle) {
+            const g = [...puzzle];
+            // hardest starts at -1 = no technique fired yet
+            let hardest = -1;
+
+            const applyNakedSingles = (cands) => {
+                let progress = false;
+                for (let i = 0; i < 81; i++) {
+                    if (g[i] !== 0 || cands[i].size !== 1) continue;
+                    const val = [...cands[i]][0];
+                    g[i] = val;
+                    this._eliminatePeers(cands, i, val);
+                    if (hardest < 0) hardest = 0;
+                    progress = true;
+                }
+                return progress;
+            };
+
+            const applyHiddenSingles = (cands) => {
+                let progress = false;
+                for (const unit of this._allUnits()) {
+                    for (let n = 1; n <= 9; n++) {
+                        const possible = unit.filter(i => g[i] === 0 && cands[i].has(n));
+                        if (possible.length === 1) {
+                            const idx = possible[0];
+                            g[idx] = n;
+                            this._eliminatePeers(cands, idx, n);
+                            cands[idx].clear();
+                            if (hardest < 1) hardest = 1;
+                            progress = true;
                         }
-                        return;
                     }
                 }
-                solutions++;
+                return progress;
+            };
+
+            const applyLockedCandidates = (cands) => {
+                let progress = false;
+                for (let br = 0; br < 3; br++) {
+                    for (let bc = 0; bc < 3; bc++) {
+                        const boxCells = [];
+                        for (let i = 0; i < 3; i++)
+                            for (let j = 0; j < 3; j++)
+                                boxCells.push((br*3+i)*9 + (bc*3+j));
+                        for (let n = 1; n <= 9; n++) {
+                            const inBox = boxCells.filter(i => g[i] === 0 && cands[i].has(n));
+                            if (inBox.length < 2) continue;
+                            const rows = [...new Set(inBox.map(i => Math.floor(i/9)))];
+                            const cols = [...new Set(inBox.map(i => i%9))];
+                            if (rows.length === 1) {
+                                for (let c = 0; c < 9; c++) {
+                                    const ci = rows[0]*9+c;
+                                    if (boxCells.includes(ci) || g[ci] !== 0 || !cands[ci].has(n)) continue;
+                                    cands[ci].delete(n);
+                                    if (hardest < 2) hardest = 2;
+                                    progress = true;
+                                }
+                            }
+                            if (cols.length === 1) {
+                                for (let r = 0; r < 9; r++) {
+                                    const ci = r*9+cols[0];
+                                    if (boxCells.includes(ci) || g[ci] !== 0 || !cands[ci].has(n)) continue;
+                                    cands[ci].delete(n);
+                                    if (hardest < 2) hardest = 2;
+                                    progress = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                return progress;
+            };
+
+            const applyNakedPairs = (cands) => {
+                let progress = false;
+                for (const unit of this._allUnits()) {
+                    const empties = unit.filter(i => g[i] === 0);
+                    const pairs = empties.filter(i => cands[i].size === 2);
+                    for (let a = 0; a < pairs.length; a++) {
+                        for (let b = a+1; b < pairs.length; b++) {
+                            const setA = cands[pairs[a]];
+                            const setB = cands[pairs[b]];
+                            if (setA.size === 2 && [...setA].every(v => setB.has(v))) {
+                                for (const n of setA) {
+                                    for (const i of empties) {
+                                        if (i === pairs[a] || i === pairs[b]) continue;
+                                        if (cands[i].has(n)) {
+                                            cands[i].delete(n);
+                                            if (hardest < 3) hardest = 3;
+                                            progress = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return progress;
+            };
+
+            // Main solving loop — apply techniques weakest-first
+            let maxIter = 200;
+            while (maxIter-- > 0) {
+                const cands = this.getCandidates(g);
+                if (g.every(v => v !== 0)) break; // solved
+
+                let progress = false;
+                progress = applyNakedSingles(cands) || progress;
+                if (!progress) progress = applyHiddenSingles(cands) || progress;
+                if (!progress) progress = applyLockedCandidates(cands) || progress;
+                if (!progress) progress = applyNakedPairs(cands) || progress;
+                if (!progress) {
+                    // No supported technique can advance — mark as expert+
+                    if (hardest < 4) hardest = 4;
+                    break;
+                }
             }
-            
-            countSolutions(copyGrid);
-            
-            if (solutions !== 1) {
-                grid[index] = backup; // Put back if not unique
+
+            const solved = g.every(v => v !== 0);
+            const remainingUnsolvedCells = g.filter(v => v === 0).length;
+            // Clamp hardest to 0 if nothing fired (all cells were already given)
+            if (hardest < 0) hardest = 0;
+            const techName = ['naked single', 'hidden single', 'locked candidates', 'naked pair', 'expert+'][hardest] || 'unknown';
+
+            // Rating map
+            let rating;
+            if (hardest === 0) rating = 'easy';
+            else if (hardest <= 2) rating = 'medium';
+            else rating = 'hard';   // hardest 3 (naked pair) or 4 (expert+)
+
+            console.log(
+                `  rateLogical: solved=${solved} hardest="${techName}"(${hardest})` +
+                ` remainingCells=${remainingUnsolvedCells} → rated="${rating}"`
+            );
+
+            return { rating, techName, solved, hardest, remainingUnsolvedCells };
+        },
+
+        _eliminatePeers(cands, idx, val) {
+            const row = Math.floor(idx / 9), col = idx % 9;
+            const sr = Math.floor(row/3)*3, sc = Math.floor(col/3)*3;
+            for (let i = 0; i < 9; i++) {
+                cands[row*9+i].delete(val);
+                cands[i*9+col].delete(val);
             }
-            attempts--;
+            for (let i = 0; i < 3; i++)
+                for (let j = 0; j < 3; j++)
+                    cands[(sr+i)*9+(sc+j)].delete(val);
+            cands[idx].clear();
+        },
+
+        _allUnits() {
+            const units = [];
+            for (let i = 0; i < 9; i++) {
+                const row = [], col = [], box = [];
+                for (let j = 0; j < 9; j++) {
+                    row.push(i*9+j);
+                    col.push(j*9+i);
+                    const br = Math.floor(i/3)*3, bc = (i%3)*3;
+                    box.push((br + Math.floor(j/3))*9 + (bc + j%3));
+                }
+                units.push(row, col, box);
+            }
+            return units;
+        },
+
+        // ── One generation attempt (synchronous inner loop) ───────────────────
+        // Returns accepted puzzle or null if time exceeded.
+        // deadline = performance.now() value after which we must stop.
+        _tryGenerate(difficulty, cfg, deadline) {
+            const [rMin, rMax] = cfg.removeRange;
+            let attempts = 0;
+
+            while (performance.now() < deadline) {
+                attempts++;
+                const solved = new Array(81).fill(0);
+                fillGrid(solved);
+
+                const targetRemove = rMin + Math.floor(Math.random() * (rMax - rMin + 1));
+                const puzzle = [...solved];
+                this.removeCellsUnique(puzzle, targetRemove);
+                const clueCount = puzzle.filter(v => v !== 0).length;
+
+                // Uniqueness (already guaranteed by removeCellsUnique, but double-check)
+                const sols = this.countSolutions(puzzle, 2);
+                if (sols !== 1) {
+                    console.log(`Game: ${difficulty} rejected — uniqueness=${sols}, attempt ${attempts}`);
+                    continue;
+                }
+
+                const { rating, techName, solved: logicSolved, hardest, remainingUnsolvedCells } = this.rateLogical(puzzle);
+
+                // For hard: allow expert+ (unsolvable by supported techniques) since
+                // uniqueness is confirmed — it IS solvable, just needs bifurcation.
+                // Reject only if it rated easy or medium.
+                if (rating !== difficulty) {
+                    console.log(`Game: ${difficulty} rejected — rated="${rating}" tech="${techName}" clues=${clueCount} attempt=${attempts}`);
+                    continue;
+                }
+
+                // Extra guard: hard must NOT be solvable by singles alone
+                if (difficulty === 'hard' && hardest <= 1) {
+                    console.log(`Game: hard rejected — solvable by singles (hardest=${hardest}), attempt ${attempts}`);
+                    continue;
+                }
+
+                console.log(`Game: ${difficulty} accepted — ${clueCount} clues, tech="${techName}", attempts=${attempts}`);
+                return { grid: puzzle, solved, clueCount, rating, techName, attempts, hardest };
+            }
+            return null; // time expired
+        },
+
+        // ── Verified hard fallback ────────────────────────────────────────────
+        // Called when _tryGenerate times out. Tries a quick extra burst with
+        // looser time (200ms more) then builds a minimum-guarantee hard puzzle.
+        _hardFallback(deadline) {
+            // Extra 200ms burst
+            const extended = deadline + 200;
+            const cfgHard = { removeRange: [50, 56] };
+            const result = this._tryGenerate('hard', cfgHard, extended);
+            if (result) {
+                console.log(`Game: hard accepted via extended fallback — ${result.clueCount} clues`);
+                return result;
+            }
+
+            // Last resort: keep generating until we find ANY puzzle with hardest>=3
+            // (no time limit — guaranteed to terminate within ~5 attempts statistically)
+            console.warn('Game: hard — using last-resort fallback, generating until hardest>=3');
+            let safeAttempts = 0;
+            while (safeAttempts < 200) {
+                safeAttempts++;
+                const solved = new Array(81).fill(0);
+                fillGrid(solved);
+                const puzzle = [...solved];
+                this.removeCellsUnique(puzzle, 53);
+                if (this.countSolutions(puzzle, 2) !== 1) continue;
+                const { rating, techName, hardest } = this.rateLogical(puzzle);
+                if (hardest < 3) continue; // not hard enough
+                const clueCount = puzzle.filter(v => v !== 0).length;
+                console.log(`Game: hard last-resort accepted — ${clueCount} clues, tech="${techName}", safeAttempts=${safeAttempts}`);
+                return { grid: puzzle, solved, clueCount, rating: 'hard', techName, attempts: safeAttempts, hardest };
+            }
+
+            // Absolute last resort (should be statistically unreachable)
+            console.error('Game: hard — absolute last resort, returning best-effort puzzle');
+            const solved = new Array(81).fill(0);
+            fillGrid(solved);
+            const puzzle = [...solved];
+            this.removeCellsUnique(puzzle, 53);
+            const clueCount = puzzle.filter(v => v !== 0).length;
+            return { grid: puzzle, solved, clueCount, rating: 'hard', techName: 'last-resort', attempts: 999, hardest: 3 };
+        },
+
+        // ── Main generate function ────────────────────────────────────────────
+        // Returns { grid, solved, clueCount, rating, techName, attempts, hardest }
+        // Time-guarded: will not freeze UI. For easy/medium fallback returns
+        // best-effort puzzle (may be a different rating in extreme edge cases).
+        generate(difficulty) {
+            const config = {
+                // easy: solvable by naked singles; 32-40 removals
+                easy:   { removeRange: [32, 40], timeLimitMs: 300 },
+                // medium: needs hidden singles; 42-50 removals
+                medium: { removeRange: [42, 50], timeLimitMs: 400 },
+                // hard: needs pairs/expert; 50-56 removals
+                hard:   { removeRange: [50, 56], timeLimitMs: 400 }
+            };
+            const cfg = config[difficulty] || config.easy;
+            const deadline = performance.now() + cfg.timeLimitMs;
+
+            const result = this._tryGenerate(difficulty, cfg, deadline);
+            if (result) return result;
+
+            // Time expired — difficulty-specific fallback
+            console.warn(`Game: ${difficulty} — time limit (${cfg.timeLimitMs}ms) reached, using fallback`);
+
+            if (difficulty === 'hard') {
+                return this._hardFallback(deadline);
+            }
+
+            // Easy/medium fallback: generate any puzzle in the removal range,
+            // verify uniqueness, log actual rating (may differ from requested).
+            let fbAttempts = 0;
+            while (fbAttempts < 30) {
+                fbAttempts++;
+                const solved = new Array(81).fill(0);
+                fillGrid(solved);
+                const [rMin, rMax] = cfg.removeRange;
+                const puzzle = [...solved];
+                this.removeCellsUnique(puzzle, Math.round((rMin + rMax) / 2));
+                if (this.countSolutions(puzzle, 2) !== 1) continue;
+                const { rating: actualRating, techName } = this.rateLogical(puzzle);
+                const clueCount = puzzle.filter(v => v !== 0).length;
+                console.log(`Game: ${difficulty} fallback accepted — clues=${clueCount} actualRating="${actualRating}" tech="${techName}" (requested: ${difficulty})`);
+                return { grid: puzzle, solved, clueCount, rating: actualRating, techName, attempts: fbAttempts, hardest: -1 };
+            }
+
+            // Absolute last resort for easy/medium
+            const fbSolved = new Array(81).fill(0);
+            fillGrid(fbSolved);
+            const fbPuzzle = [...fbSolved];
+            const [rMin, rMax] = cfg.removeRange;
+            this.removeCellsUnique(fbPuzzle, Math.round((rMin + rMax) / 2));
+            const fbClues = fbPuzzle.filter(v => v !== 0).length;
+            return { grid: fbPuzzle, solved: fbSolved, clueCount: fbClues, rating: difficulty, techName: 'last-resort', attempts: 999, hardest: -1 };
         }
-    }
+    };
+
 
     /**
      * Checks if placing a number in a specific index violates any Sudoku rules
@@ -1624,19 +1995,23 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Restore difficulty badge
+        // Restore difficulty badge in separate row
+        const badgeRow = document.getElementById('difficulty-badge-row');
         const badgeMap = {
-            'easy': { label: 'Easy', cls: 'diff-badge-easy' },
+            'easy':   { label: 'Easy',   cls: 'diff-badge-easy' },
             'medium': { label: 'Medium', cls: 'diff-badge-medium' },
-            'hard': { label: 'Hard', cls: 'diff-badge-hard' }
+            'hard':   { label: 'Hard',   cls: 'diff-badge-hard' }
         };
-        if (levelDisplay) {
+        if (badgeRow) {
             if (isDailyChallenge) {
-                levelDisplay.innerHTML = `Level ${currentLevel} <span class="difficulty-badge diff-badge-daily">Daily</span>`;
+                badgeRow.innerHTML = `<span class="difficulty-badge diff-badge-daily">Daily</span>`;
             } else {
                 const b = badgeMap[selectedDifficulty] || badgeMap['easy'];
-                levelDisplay.innerHTML = `Level ${currentLevel} <span class="difficulty-badge ${b.cls}">${b.label}</span>`;
+                badgeRow.innerHTML = `<span class="difficulty-badge ${b.cls}">${b.label}</span>`;
             }
+        }
+        if (levelDisplay) {
+            levelDisplay.textContent = `Level ${currentLevel}`;
         }
 
         updateMistakeUI();
@@ -1676,9 +2051,32 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Pause button
+    if (gamePauseBtn) {
+        gamePauseBtn.addEventListener('click', () => {
+            if (isPaused) resumeGame(); else pauseGame();
+        });
+    }
+
+    // Pause modal — Resume
+    if (pauseResumeBtn) {
+        pauseResumeBtn.addEventListener('click', () => resumeGame());
+    }
+
+    // Pause modal — Go to Home
+    if (pauseHomeBtn) {
+        pauseHomeBtn.addEventListener('click', () => {
+            resumeGame();        // un-pause state first
+            saveGameState();
+            stopTimer();
+            showView('home');
+        });
+    }
+
     // Home Back Button (game screen → home)
     if (homeBackBtn) {
         homeBackBtn.addEventListener('click', () => {
+            if (isPaused) resumeGame();
             saveGameState();
             stopTimer();
             showView('home');
