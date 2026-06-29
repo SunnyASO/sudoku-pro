@@ -371,9 +371,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const hapticToggle = document.getElementById('haptic-toggle');
     const levelDisplay = document.getElementById('level-display');
     const levelProgressFill = document.getElementById('level-progress-fill');
-    const levelUpModal = document.getElementById('level-up-modal');
-    const levelUpText = document.getElementById('level-up-text');
-    const levelContinueBtn = document.getElementById('level-continue-btn');
+    const victoryModal = document.getElementById('victory-modal');
+    const victoryNextBtn = document.getElementById('victory-next-btn');
+    const victoryReplayBtn = document.getElementById('victory-replay-btn');
+    const victoryShareBtn = document.getElementById('victory-share-btn');
+    const victoryHomeBtn = document.getElementById('victory-home-btn');
+    let completedPuzzleSnapshot = null;
     const pencilBtn = document.getElementById('pencil-btn');
 
     // Home screen buttons
@@ -564,6 +567,7 @@ document.addEventListener('DOMContentLoaded', () => {
         },
 
         recordWin(level, timeSeconds) {
+            let isNewBest = false;
             if (level > 1) {
                 this.stats.gamesWon++;
                 this.stats.currentStreak++;
@@ -572,9 +576,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 if (timeSeconds < this.stats.bestTime) {
                     this.stats.bestTime = timeSeconds;
+                    isNewBest = true;
                 }
                 this.save();
             }
+            return isNewBest;
         },
 
         recordGameOver() {
@@ -713,11 +719,97 @@ document.addEventListener('DOMContentLoaded', () => {
     tryAgainBtn.addEventListener('click', tryAgain);
     restartGameBtn.addEventListener('click', restartGame);
     
-    if (levelContinueBtn) {
-        levelContinueBtn.addEventListener('click', () => {
-            levelUpModal.classList.add('hidden');
-            startNewGame();
-            saveGameState();
+    if (victoryNextBtn) {
+        victoryNextBtn.addEventListener('click', () => {
+            victoryModal.classList.add('hidden');
+            if (completedPuzzleSnapshot && completedPuzzleSnapshot.isDailyChallenge) {
+                switchView('home');
+            } else {
+                startNewGame();
+                saveGameState();
+            }
+        });
+    }
+
+    if (victoryReplayBtn) {
+        victoryReplayBtn.addEventListener('click', () => {
+            victoryModal.classList.add('hidden');
+            if (completedPuzzleSnapshot) {
+                // Clear active play state
+                isPaused = false;
+                undoStack = [];
+                undosRemaining = MAX_UNDOS;
+                hintsRemaining = MAX_HINTS;
+                mistakes = 0;
+                mistakesThisGame = 0;
+                hintsUsedThisGame = 0;
+                
+                updateMistakeUI();
+                updateUndoUI();
+                updateHintUI();
+                
+                if (selectedCell) {
+                    selectedCell.classList.remove('selected');
+                    selectedCell = null;
+                }
+
+                // Restore original grid
+                const cells = Array.from(board.children);
+                cells.forEach(c => {
+                    c.textContent = '';
+                    c.dataset.value = '';
+                    c.dataset.notes = '';
+                    c.classList.remove('prefilled', 'user-input', 'error', 'crosshair', 'tutorial-highlight', 'tutorial-dim', 'locked-group');
+                });
+                
+                const origGrid = completedPuzzleSnapshot.originalGrid;
+                for (let i = 0; i < 81; i++) {
+                    if (origGrid[i] !== 0) {
+                        cells[i].textContent = origGrid[i];
+                        cells[i].dataset.value = origGrid[i].toString();
+                        cells[i].classList.add('prefilled');
+                    }
+                }
+                
+                // Allow user to clear completedPuzzleSnapshot.recorded on next win
+                // Wait, if they replay they should be able to win and not get stats again.
+                // We keep recorded=true in the snapshot, which prevents checkWinCondition from double counting.
+                
+                startTimer();
+                saveGameState();
+            }
+        });
+    }
+
+    if (victoryShareBtn) {
+        victoryShareBtn.addEventListener('click', async () => {
+            if (!completedPuzzleSnapshot) return;
+            const diff = completedPuzzleSnapshot.isDailyChallenge ? 'Daily Challenge' : completedPuzzleSnapshot.difficulty;
+            const timeStr = document.getElementById('victory-time')?.textContent || 'record time';
+            const text = `I just solved a ${diff} puzzle in Sudoku Pro in ${timeStr}!`;
+            try {
+                if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share) {
+                    await window.Capacitor.Plugins.Share.share({
+                        title: 'Sudoku Pro',
+                        text: text,
+                        dialogTitle: 'Share your victory'
+                    });
+                } else if (navigator.share) {
+                    await navigator.share({
+                        title: 'Sudoku Pro',
+                        text: text
+                    });
+                }
+            } catch (err) {
+                console.log('Share canceled or failed', err);
+            }
+        });
+    }
+
+    if (victoryHomeBtn) {
+        victoryHomeBtn.addEventListener('click', () => {
+            victoryModal.classList.add('hidden');
+            switchView('home');
         });
     }
 
@@ -1132,29 +1224,38 @@ document.addEventListener('DOMContentLoaded', () => {
             stopTimer();
             timerDisplay.style.color = '#4a6fa5'; // Win color
 
-            StatsEngine.recordWin(currentLevel, secondsElapsed);
+            // Only record stats if this exact replay wasn't already recorded
+            if (!completedPuzzleSnapshot || !completedPuzzleSnapshot.recorded) {
+                const isNewBest = StatsEngine.recordWin(currentLevel, secondsElapsed);
+                
+                // Mark daily challenge completed if applicable
+                if (isDailyChallenge) {
+                    DailyChallengeEngine.markCompleted(DailyChallengeEngine.todayKey());
+                }
+
+                // Fire achievement checks
+                const winFlags = {
+                    perfectSolve: mistakesThisGame === 0,
+                    noHints: hintsUsedThisGame === 0
+                };
+                AchievementsEngine.onWin(winFlags);
+
+                // Level up (only for non-daily games)
+                if (!isDailyChallenge) {
+                    currentLevel++;
+                    localStorage.setItem('sudoku-level', currentLevel);
+                }
+
+                if (completedPuzzleSnapshot) {
+                    completedPuzzleSnapshot.recorded = true;
+                    completedPuzzleSnapshot.isNewBest = isNewBest;
+                }
+            }
+            
             clearSavedGame();
-
-            // Mark daily challenge completed if applicable
-            if (isDailyChallenge) {
-                DailyChallengeEngine.markCompleted(DailyChallengeEngine.todayKey());
-            }
-
-            // Fire achievement checks
-            const winFlags = {
-                perfectSolve: mistakesThisGame === 0,
-                noHints: hintsUsedThisGame === 0
-            };
-            AchievementsEngine.onWin(winFlags);
-
-            // Level up (only for non-daily games)
-            if (!isDailyChallenge) {
-                currentLevel++;
-                localStorage.setItem('sudoku-level', currentLevel);
-            }
-
             SoundEngine.playVictory();
-            // Small timeout to allow UI to render the last number before alerting
+
+            // Small timeout to allow UI to render the last number before modal
             setTimeout(() => {
                 updateLevelUI();
 
@@ -1167,11 +1268,50 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
 
-                if (levelUpModal && levelUpText) {
-                    levelUpText.textContent = isDailyChallenge
-                        ? 'Daily Challenge Complete! 🎉'
-                        : `You reached Level ${currentLevel}`;
-                    levelUpModal.classList.remove('hidden');
+                if (victoryModal) {
+                    // Populate victory stats
+                    const vDiff = document.getElementById('victory-diff');
+                    const vTime = document.getElementById('victory-time');
+                    const vMistakes = document.getElementById('victory-mistakes');
+                    const vHints = document.getElementById('victory-hints');
+                    const vBest = document.getElementById('victory-best-time');
+                    
+                    if (vDiff) vDiff.textContent = isDailyChallenge ? 'Daily' : (selectedDifficulty.charAt(0).toUpperCase() + selectedDifficulty.slice(1));
+                    if (vTime) vTime.textContent = timerDisplay.textContent;
+                    if (vMistakes) vMistakes.textContent = mistakesThisGame.toString();
+                    if (vHints) vHints.textContent = hintsUsedThisGame.toString();
+                    
+                    if (vBest) {
+                        if (completedPuzzleSnapshot && completedPuzzleSnapshot.isNewBest) {
+                            vBest.classList.remove('hidden');
+                        } else {
+                            vBest.classList.add('hidden');
+                        }
+                    }
+
+                    // Calculate stars
+                    let stars = 1;
+                    if (mistakesThisGame === 0 && hintsUsedThisGame === 0) {
+                        stars = 3;
+                    } else if (mistakesThisGame <= 2 && hintsUsedThisGame <= 1) {
+                        stars = 2;
+                    }
+
+                    for (let i = 1; i <= 3; i++) {
+                        const starEl = document.getElementById(`v-star-${i}`);
+                        if (starEl) {
+                            starEl.classList.remove('filled', 'animate-in');
+                            // Small delay for stagger effect
+                            setTimeout(() => {
+                                if (i <= stars) {
+                                    starEl.classList.add('filled');
+                                }
+                                starEl.classList.add('animate-in');
+                            }, i * 200);
+                        }
+                    }
+
+                    victoryModal.classList.remove('hidden');
                 } else {
                     alert(`Congratulations! Puzzle solved in ${timerDisplay.textContent}.`);
                     startNewGame();
@@ -1329,6 +1469,15 @@ document.addEventListener('DOMContentLoaded', () => {
         let grid, diffLabel, badgeClass;
 
         const finishRender = () => {
+            // Save the puzzle snapshot for replay BEFORE user edits it
+            completedPuzzleSnapshot = {
+                originalGrid: [...grid],
+                solvedGrid: [...solvedGrid],
+                difficulty: selectedDifficulty,
+                isDailyChallenge: isDailyChallenge,
+                recorded: false
+            };
+
             // 3. Render
             for (let i = 0; i < 81; i++) {
                 if (grid[i] !== 0) {
