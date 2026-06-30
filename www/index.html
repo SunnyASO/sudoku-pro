@@ -334,19 +334,47 @@
         </div>
     </div>
 
-    <!-- Daily Challenge Modal -->
+    <!-- Daily Challenge Calendar Modal -->
     <div id="daily-challenge-modal" class="modal hidden">
-        <div class="modal-content daily-content">
+        <div class="modal-content calendar-content">
             <button id="close-daily-btn" class="icon-btn close-btn" title="Close">✖</button>
-            <h2>Daily Challenge</h2>
-            <div id="daily-date-display" class="daily-date"></div>
-            <div id="daily-status-display" class="daily-status"></div>
-            <div class="daily-diff-row">
-                <span class="daily-diff-label">Difficulty:</span>
-                <span id="daily-diff-value" class="daily-diff-value">Medium</span>
+            
+            <div class="cal-header">
+                <button id="cal-prev-btn" class="icon-btn cal-nav-btn">◀</button>
+                <h2 id="cal-month-year">June 2026</h2>
+                <button id="cal-next-btn" class="icon-btn cal-nav-btn">▶</button>
             </div>
-            <div class="modal-buttons" style="margin-top: 24px; flex-direction: column; gap: 10px;">
-                <button id="daily-play-btn" class="btn" style="width: 100%;">▶ Play Today</button>
+
+            <div class="cal-stats">
+                <div class="cal-stat-item">
+                    <span id="cal-streak-current">0</span>
+                    <label>Streak</label>
+                </div>
+                <div class="cal-stat-item">
+                    <span id="cal-streak-best">0</span>
+                    <label>Best</label>
+                </div>
+                <div class="cal-stat-item">
+                    <span id="cal-total">0</span>
+                    <label>Total</label>
+                </div>
+                <div class="cal-stat-item">
+                    <span id="cal-month-progress">0/30</span>
+                    <label>Month</label>
+                </div>
+            </div>
+
+            <div class="cal-weekdays">
+                <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+            </div>
+            
+            <div id="cal-grid" class="cal-grid">
+                <!-- Days injected by JS -->
+            </div>
+
+            <div class="cal-footer">
+                <div id="cal-selected-status" class="cal-selected-status">Select a day</div>
+                <button id="daily-play-btn" class="btn cal-play-btn">Play</button>
             </div>
         </div>
     </div>

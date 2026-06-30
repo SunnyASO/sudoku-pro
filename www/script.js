@@ -155,39 +155,212 @@ document.addEventListener('DOMContentLoaded', () => {
 
         markCompleted(dateKey) {
             localStorage.setItem(this.getCompletionKey(dateKey), 'true');
+            if (this.currentYear && this.currentMonth !== undefined) {
+                this.computeStats();
+                this.renderCalendar(this.currentYear, this.currentMonth);
+            }
+        },
+
+        currentYear: new Date().getFullYear(),
+        currentMonth: new Date().getMonth(),
+        selectedDateKey: null,
+
+        computeStats() {
+            let currentStreak = 0;
+            let bestStreak = 0;
+            let totalCompleted = 0;
+            let monthCompleted = 0;
+
+            const allKeys = Object.keys(localStorage)
+                .filter(k => k.startsWith('sudoku-daily-done-'))
+                .map(k => k.replace('sudoku-daily-done-', ''))
+                .sort();
+
+            totalCompleted = allKeys.length;
+
+            const monthPrefix = `${this.currentYear}-${String(this.currentMonth + 1).padStart(2, '0')}`;
+            monthCompleted = allKeys.filter(k => k.startsWith(monthPrefix)).length;
+
+            let tempStreak = 0;
+            let lastDateObj = null;
+
+            for (const dateKey of allKeys) {
+                const dateObj = new Date(dateKey + 'T00:00:00'); 
+                if (!lastDateObj) {
+                    tempStreak = 1;
+                } else {
+                    const diffTime = Math.abs(dateObj - lastDateObj);
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                    if (diffDays === 1) {
+                        tempStreak++;
+                    } else if (diffDays > 1) {
+                        tempStreak = 1;
+                    }
+                }
+                if (tempStreak > bestStreak) bestStreak = tempStreak;
+                lastDateObj = dateObj;
+            }
+
+            const todayStr = this.todayKey();
+            const d = new Date();
+            d.setDate(d.getDate() - 1);
+            const yesterdayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+            if (allKeys.length > 0) {
+                const lastCompleted = allKeys[allKeys.length - 1];
+                if (lastCompleted === todayStr || lastCompleted === yesterdayStr) {
+                    currentStreak = tempStreak;
+                } else {
+                    currentStreak = 0;
+                }
+            }
+
+            const eCur = document.getElementById('cal-streak-current');
+            const eBest = document.getElementById('cal-streak-best');
+            const eTotal = document.getElementById('cal-total');
+            const eMonth = document.getElementById('cal-month-progress');
+
+            if (eCur) eCur.textContent = currentStreak;
+            if (eBest) eBest.textContent = bestStreak;
+            if (eTotal) eTotal.textContent = totalCompleted;
+            if (eMonth) {
+                const daysInMonth = new Date(this.currentYear, this.currentMonth + 1, 0).getDate();
+                eMonth.textContent = `${monthCompleted}/${daysInMonth}`;
+            }
+        },
+
+        renderCalendar(year, month) {
+            const grid = document.getElementById('cal-grid');
+            const header = document.getElementById('cal-month-year');
+            if (!grid || !header) return;
+
+            const d = new Date(year, month, 1);
+            header.textContent = d.toLocaleString('default', { month: 'long', year: 'numeric' });
+            grid.innerHTML = '';
+            
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const todayStr = this.todayKey();
+
+            for (let i = 0; i < firstDay; i++) {
+                const empty = document.createElement('div');
+                empty.className = 'cal-day cal-empty';
+                grid.appendChild(empty);
+            }
+
+            const now = new Date();
+            now.setHours(0,0,0,0);
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const cell = document.createElement('div');
+                cell.className = 'cal-day';
+                cell.textContent = day;
+
+                const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                
+                const isCompleted = this.isCompleted(dateStr);
+                const isToday = (dateStr === todayStr);
+                const cellDate = new Date(year, month, day);
+                const isFuture = cellDate > now;
+                
+                if (isToday) cell.classList.add('cal-today');
+                if (isCompleted) cell.classList.add('cal-completed');
+
+                if (isFuture) {
+                    cell.classList.add('cal-disabled');
+                } else if (!isCompleted && !isToday) {
+                    cell.classList.add('cal-missed');
+                }
+
+                if (this.selectedDateKey === dateStr) {
+                    cell.classList.add('cal-selected');
+                }
+
+                cell.addEventListener('click', () => {
+                    this.selectedDateKey = dateStr;
+                    this.renderCalendar(year, month);
+                });
+
+                grid.appendChild(cell);
+            }
+            
+            this.updateFooter();
+        },
+
+        updateFooter() {
+            const statusLabel = document.getElementById('cal-selected-status');
+            const playBtn = document.getElementById('daily-play-btn');
+            if (!statusLabel || !playBtn) return;
+
+            if (!this.selectedDateKey) {
+                statusLabel.textContent = "Select a day";
+                playBtn.disabled = true;
+                return;
+            }
+
+            const todayStr = this.todayKey();
+            const isToday = (this.selectedDateKey === todayStr);
+            const isCompleted = this.isCompleted(this.selectedDateKey);
+            
+            const parts = this.selectedDateKey.split('-');
+            const selDate = new Date(parts[0], parts[1]-1, parts[2]);
+            const formatted = selDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+            const now = new Date();
+            now.setHours(0,0,0,0);
+            const isFuture = selDate > now;
+
+            if (isFuture) {
+                statusLabel.textContent = `${formatted}: Locked`;
+                playBtn.disabled = true;
+                playBtn.textContent = "Locked";
+            } else if (isCompleted) {
+                statusLabel.textContent = `${formatted}: ✅ Completed`;
+                playBtn.disabled = false;
+                playBtn.textContent = "Play Again";
+            } else if (isToday) {
+                statusLabel.textContent = `${formatted}: Today's Challenge`;
+                playBtn.disabled = false;
+                playBtn.textContent = "Play Today";
+            } else {
+                statusLabel.textContent = `${formatted}: Missed`;
+                playBtn.disabled = true;
+                playBtn.textContent = "Cannot Play Yet";
+            }
+        },
+
+        navigateMonth(delta) {
+            this.currentMonth += delta;
+            if (this.currentMonth > 11) {
+                this.currentMonth = 0;
+                this.currentYear++;
+            } else if (this.currentMonth < 0) {
+                this.currentMonth = 11;
+                this.currentYear--;
+            }
+            
+            const now = new Date();
+            if (this.currentYear === now.getFullYear() && this.currentMonth === now.getMonth()) {
+                this.selectedDateKey = this.todayKey();
+            } else {
+                this.selectedDateKey = `${this.currentYear}-${String(this.currentMonth+1).padStart(2,'0')}-01`;
+            }
+            
+            this.computeStats();
+            this.renderCalendar(this.currentYear, this.currentMonth);
         },
 
         openModal() {
             const modal = document.getElementById('daily-challenge-modal');
-            const dateDisp = document.getElementById('daily-date-display');
-            const statusDisp = document.getElementById('daily-status-display');
-            const diffDisp = document.getElementById('daily-diff-value');
-
             if (!modal) return;
 
-            const todayKey = this.todayKey();
-            const completed = this.isCompleted(todayKey);
-
-            // Format date nicely
-            const d = new Date();
-            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-            if (dateDisp) dateDisp.textContent = d.toLocaleDateString(undefined, options);
-            if (diffDisp) diffDisp.textContent = 'Medium';
-
-            if (statusDisp) {
-                if (completed) {
-                    statusDisp.textContent = '✅ Completed!';
-                    statusDisp.className = 'daily-status completed';
-                } else {
-                    statusDisp.textContent = 'Not yet played today';
-                    statusDisp.className = 'daily-status';
-                }
-            }
-
-            const playBtn = document.getElementById('daily-play-btn');
-            if (playBtn) {
-                playBtn.textContent = completed ? '▶ Play Again' : '▶ Play Today';
-            }
+            const now = new Date();
+            this.currentYear = now.getFullYear();
+            this.currentMonth = now.getMonth();
+            this.selectedDateKey = this.todayKey();
+            
+            this.computeStats();
+            this.renderCalendar(this.currentYear, this.currentMonth);
 
             modal.classList.remove('hidden');
         }
