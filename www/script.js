@@ -587,7 +587,8 @@ document.addEventListener('DOMContentLoaded', () => {
         useWorker: false // Force main thread
     }) : null;
     let undosRemaining = MAX_UNDOS;
-    let hintsRemaining = MAX_HINTS;
+let hintsRemaining = MAX_HINTS;
+let isRewardedHintRequestInProgress = false;
     
     let mistakes = 0;
     const MAX_MISTAKES = 3;
@@ -1549,8 +1550,36 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Hint Logic ---
-    function giveHint() {
-        if (hintsRemaining <= 0) return;
+    async function giveHint() {
+    if (hintsRemaining <= 0) {
+        if (isRewardedHintRequestInProgress) return;
+
+        const wantsAd = window.confirm("No hints left. Watch a short ad to get +1 hint?");
+
+        if (!wantsAd) return;
+
+        if (typeof AdMobService === "undefined") {
+            console.warn("Rewarded Hint unavailable: AdMobService is not loaded.");
+            return;
+        }
+
+        isRewardedHintRequestInProgress = true;
+        if (hintBtn) hintBtn.disabled = true;
+
+        const rewardEarned = await AdMobService.showRewardedHintAd();
+
+        isRewardedHintRequestInProgress = false;
+
+            if (rewardEarned) {
+    hintsRemaining += 1;
+    updateHintUI();
+    saveGameState();
+} else {
+    updateHintUI();
+}
+
+        return;
+    }
 
         let targetCell = selectedCell;
 
@@ -1581,13 +1610,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateHintUI() {
-        if (hintCountSpan) hintCountSpan.textContent = hintsRemaining;
-        if (hintsRemaining <= 0) {
-            hintBtn.disabled = true;
-        } else {
-            hintBtn.disabled = false;
-        }
+    if (hintCountSpan) hintCountSpan.textContent = hintsRemaining;
+
+    if (hintBtn) {
+        hintBtn.disabled = isRewardedHintRequestInProgress;
     }
+}
     
     // --- Sudoku Generation & State ---
     
