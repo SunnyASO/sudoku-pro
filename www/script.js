@@ -558,7 +558,10 @@ let rewardAdModalResolve = null;
     const victoryShareBtn = document.getElementById('victory-share-btn');
     const victoryHomeBtn = document.getElementById('victory-home-btn');
     let completedPuzzleSnapshot = null;
-    const pencilBtn = document.getElementById('pencil-btn');
+let completionNavigationCountThisSession = 0;
+let isCompletionNavigationInProgress = false;
+
+const pencilBtn = document.getElementById('pencil-btn');
 
     // Home screen buttons
     const continueGameBtn = document.getElementById('continue-game-btn');
@@ -909,18 +912,50 @@ if (rewardAdCancel) {
 if (rewardAdConfirm) {
     rewardAdConfirm.addEventListener('click', () => closeRewardAdModal(true));
 }
-    
+    async function runCompletionNavigationWithAd(navigateAfterAd) {
+    if (isCompletionNavigationInProgress) return;
+
+    isCompletionNavigationInProgress = true;
+
+    if (victoryNextBtn) victoryNextBtn.disabled = true;
+    if (victoryHomeBtn) victoryHomeBtn.disabled = true;
+
+    try {
+        completionNavigationCountThisSession++;
+
+        const shouldTryInterstitial =
+            completionNavigationCountThisSession > 1 &&
+            completionNavigationCountThisSession % 2 === 0;
+
+        if (shouldTryInterstitial && typeof AdMobService !== "undefined") {
+            await AdMobService.showCompletionInterstitialAd();
+        }
+
+        navigateAfterAd();
+    } catch (error) {
+        console.error("Completion navigation failed:", error);
+        navigateAfterAd();
+    } finally {
+        isCompletionNavigationInProgress = false;
+
+        if (victoryNextBtn) victoryNextBtn.disabled = false;
+        if (victoryHomeBtn) victoryHomeBtn.disabled = false;
+    }
+}
     if (victoryNextBtn) {
-        victoryNextBtn.addEventListener('click', () => {
+    victoryNextBtn.addEventListener('click', () => {
+        runCompletionNavigationWithAd(() => {
             victoryModal.classList.add('hidden');
+
             if (completedPuzzleSnapshot && completedPuzzleSnapshot.isDailyChallenge) {
-                switchView('home');
+                showView('home');
             } else {
                 startNewGame();
                 saveGameState();
             }
         });
-    }
+    });
+}
 
     if (victoryReplayBtn) {
         victoryReplayBtn.addEventListener('click', () => {
@@ -998,11 +1033,13 @@ if (rewardAdConfirm) {
     }
 
     if (victoryHomeBtn) {
-        victoryHomeBtn.addEventListener('click', () => {
+    victoryHomeBtn.addEventListener('click', () => {
+        runCompletionNavigationWithAd(() => {
             victoryModal.classList.add('hidden');
-            switchView('home');
+            showView('home');
         });
-    }
+    });
+}
 
     // Settings logic
     if (settingsBtn) {

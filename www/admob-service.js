@@ -7,6 +7,11 @@ const AdMobService = {
     isMistakeRescueLoading: false,
     isMistakeRescueShowing: false,
 
+    isCompletionInterstitialLoading: false,
+    isCompletionInterstitialShowing: false,
+    completionInterstitialsShownThisSession: 0,
+    lastAdShownAtMs: 0,
+
     async initialize() {
         if (!AdMobConfig.ADS_ENABLED) {
             console.log("AdMob initialization skipped: ADS_ENABLED is false.");
@@ -55,6 +60,27 @@ const AdMobService = {
         return AdMobConfig.IS_PRODUCTION ? placement.PRODUCTION : placement.TEST;
     },
 
+    markAdShown() {
+        this.lastAdShownAtMs = Date.now();
+    },
+
+    canShowCompletionInterstitial() {
+        const cooldownMs = 180 * 1000;
+        const now = Date.now();
+
+        if (this.completionInterstitialsShownThisSession >= 2) {
+            console.log("Completion Interstitial skipped: session limit reached.");
+            return false;
+        }
+
+        if (this.lastAdShownAtMs && now - this.lastAdShownAtMs < cooldownMs) {
+            console.log("Completion Interstitial skipped: cooldown active.");
+            return false;
+        }
+
+        return true;
+    },
+
     async showRewardedHintAd() {
         if (!AdMobConfig.ADS_ENABLED) {
             console.log("Rewarded Hint skipped: ADS_ENABLED is false.");
@@ -99,6 +125,7 @@ const AdMobService = {
             const rewardItem = await AdMob.showRewardVideoAd();
 
             this.isRewardedHintShowing = false;
+            this.markAdShown();
 
             if (rewardItem) {
                 console.log("Rewarded Hint earned:", rewardItem);
@@ -160,6 +187,7 @@ const AdMobService = {
             const rewardItem = await AdMob.showRewardVideoAd();
 
             this.isMistakeRescueShowing = false;
+            this.markAdShown();
 
             if (rewardItem) {
                 console.log("Mistake Rescue earned:", rewardItem);
@@ -173,6 +201,68 @@ const AdMobService = {
             this.isMistakeRescueShowing = false;
 
             console.error("Mistake Rescue failed:", error);
+            return false;
+        }
+    },
+
+    async showCompletionInterstitialAd() {
+        if (!AdMobConfig.ADS_ENABLED) {
+            console.log("Completion Interstitial skipped: ADS_ENABLED is false.");
+            return false;
+        }
+
+        if (this.isCompletionInterstitialLoading || this.isCompletionInterstitialShowing) {
+            console.log("Completion Interstitial skipped: already loading or showing.");
+            return false;
+        }
+
+        if (!this.canShowCompletionInterstitial()) {
+            return false;
+        }
+
+        const initialized = await this.initialize();
+        if (!initialized) {
+            console.log("Completion Interstitial skipped: AdMob not initialized.");
+            return false;
+        }
+
+        const adId = this.getAdUnitId("COMPLETION_INTERSTITIAL");
+        if (!adId) {
+            console.log("Completion Interstitial skipped: missing ad unit ID.");
+            return false;
+        }
+
+        try {
+            const AdMob = window.Capacitor.Plugins.AdMob;
+
+            if (!AdMob) {
+                console.warn("Completion Interstitial unavailable: AdMob plugin not found.");
+                return false;
+            }
+
+            this.isCompletionInterstitialLoading = true;
+
+            await AdMob.prepareInterstitial({
+                adId: adId,
+                isTesting: !AdMobConfig.IS_PRODUCTION,
+            });
+
+            this.isCompletionInterstitialLoading = false;
+            this.isCompletionInterstitialShowing = true;
+
+            await AdMob.showInterstitial();
+
+            this.isCompletionInterstitialShowing = false;
+            this.completionInterstitialsShownThisSession++;
+            this.markAdShown();
+
+            console.log("Completion Interstitial shown.");
+            return true;
+        } catch (error) {
+            this.isCompletionInterstitialLoading = false;
+            this.isCompletionInterstitialShowing = false;
+
+            console.error("Completion Interstitial failed:", error);
             return false;
         }
     }
