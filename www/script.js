@@ -2527,7 +2527,13 @@ isMistakeRescueRequestInProgress = false;
     //  HOME SCREEN BUTTON BINDINGS
     // ═══════════════════════════════════════════════
     async function goHomeFromActiveGameWithAd() {
-    const shouldLeave = confirm("Leave this puzzle and go to Home? Your progress will be saved.");
+    const shouldLeave = await showRewardAdModal({
+    icon: "🏠",
+    title: "Go to Home?",
+    message: "Your puzzle progress will be saved before leaving.",
+    confirmText: "Go Home",
+    cancelText: "Keep Playing"
+});
 
     if (!shouldLeave) {
         return;
