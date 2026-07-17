@@ -509,6 +509,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const gameOverModal = document.getElementById('game-over-modal');
     const tryAgainBtn = document.getElementById('try-again-btn');
     const restartGameBtn = document.getElementById('restart-game-btn');
+    const rewardAdModal = document.getElementById('reward-ad-modal');
+const rewardAdIcon = document.getElementById('reward-ad-icon');
+const rewardAdTitle = document.getElementById('reward-ad-title');
+const rewardAdMessage = document.getElementById('reward-ad-message');
+const rewardAdCancel = document.getElementById('reward-ad-cancel');
+const rewardAdConfirm = document.getElementById('reward-ad-confirm');
+
+let rewardAdModalResolve = null;
     
     // Consent Modal
     const consentModal = document.getElementById('consent-modal');
@@ -894,6 +902,13 @@ let isMistakeRescueRequestInProgress = false;
     hintBtn.addEventListener('click', giveHint);
     tryAgainBtn.addEventListener('click', tryAgain);
     restartGameBtn.addEventListener('click', restartGame);
+if (rewardAdCancel) {
+    rewardAdCancel.addEventListener('click', () => closeRewardAdModal(false));
+}
+
+if (rewardAdConfirm) {
+    rewardAdConfirm.addEventListener('click', () => closeRewardAdModal(true));
+}
     
     if (victoryNextBtn) {
         victoryNextBtn.addEventListener('click', () => {
@@ -1097,7 +1112,34 @@ let isMistakeRescueRequestInProgress = false;
         }
     }
 
-    function tryAgain() {
+    function showRewardAdModal({ icon, title, message, confirmText, cancelText }) {
+    return new Promise((resolve) => {
+        if (!rewardAdModal || !rewardAdConfirm || !rewardAdCancel) {
+            resolve(false);
+            return;
+        }
+
+        rewardAdModalResolve = resolve;
+
+        if (rewardAdIcon) rewardAdIcon.textContent = icon;
+        if (rewardAdTitle) rewardAdTitle.textContent = title;
+        if (rewardAdMessage) rewardAdMessage.textContent = message;
+        if (rewardAdConfirm) rewardAdConfirm.textContent = confirmText || "Watch Ad";
+        if (rewardAdCancel) rewardAdCancel.textContent = cancelText || "Not Now";
+
+        rewardAdModal.classList.remove('hidden');
+    });
+}
+
+function closeRewardAdModal(result) {
+    if (rewardAdModal) rewardAdModal.classList.add('hidden');
+
+    if (rewardAdModalResolve) {
+        rewardAdModalResolve(result);
+        rewardAdModalResolve = null;
+    }
+}
+function tryAgain() {
         gameOverModal.classList.add('hidden');
         mistakes = 0;
         updateMistakeUI();
@@ -1318,8 +1360,13 @@ let isMistakeRescueRequestInProgress = false;
         return;
     }
 
-    const wantsRescue = window.confirm("Mistake limit reached. Watch an ad to remove 1 mistake and continue?");
-
+const wantsRescue = await showRewardAdModal({
+    icon: "❤️",
+    title: "Rescue Available",
+    message: "Watch an ad to remove 1 mistake and continue this puzzle.",
+    confirmText: "Watch Ad",
+    cancelText: "End Game"
+});
     if (!wantsRescue) {
         triggerGameOver();
         return;
@@ -1338,14 +1385,15 @@ let isMistakeRescueRequestInProgress = false;
     isMistakeRescueRequestInProgress = false;
 
     if (rewardEarned) {
-        mistakeRescueUsedThisGame = true;
-        mistakes = Math.max(0, MAX_MISTAKES - 1);
-        updateMistakeUI();
-        saveGameState();
-        resumeTimer();
-    } else {
-        triggerGameOver();
-    }
+    mistakeRescueUsedThisGame = true;
+    mistakes = MAX_MISTAKES - 1;
+    updateMistakeUI();
+    saveGameState();
+    resumeTimer();
+    return;
+} else {
+    triggerGameOver();
+}
 }
     function triggerGameOver() {
         stopTimer();
@@ -1595,8 +1643,13 @@ let isMistakeRescueRequestInProgress = false;
     if (hintsRemaining <= 0) {
         if (isRewardedHintRequestInProgress) return;
 
-        const wantsAd = window.confirm("No hints left. Watch a short ad to get +1 hint?");
-
+const wantsAd = await showRewardAdModal({
+    icon: "💡",
+    title: "Need a Hint?",
+    message: "Watch a short ad to get 1 extra hint.",
+    confirmText: "Watch Ad",
+    cancelText: "Not Now"
+});
         if (!wantsAd) return;
 
         if (typeof AdMobService === "undefined") {

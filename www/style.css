@@ -342,7 +342,79 @@ h1 {
 }
 
 /* Modal */
-.modal {
+.reward-ad-card {
+    width: min(88vw, 360px);
+    max-width: 360px;
+    text-align: center;
+    padding: 28px 24px;
+    border-radius: 26px;
+    background: linear-gradient(180deg, #ffffff, #f7f4ff);
+    box-shadow: 0 18px 50px rgba(40, 28, 80, 0.28);
+}
+
+.reward-ad-icon {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 14px;
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 38px;
+    background: linear-gradient(135deg, #ffe08a, #ff9f43);
+    box-shadow: 0 10px 24px rgba(255, 159, 67, 0.35);
+}
+
+.reward-ad-card h2 {
+    margin: 8px 0 10px;
+    font-size: 26px;
+}
+
+.reward-ad-card p {
+    margin: 0 0 22px;
+    line-height: 1.45;
+    opacity: 0.85;
+}
+
+.reward-ad-actions {
+    display: flex;
+    gap: 14px;
+    margin-top: 8px;
+}
+
+.reward-ad-actions button {
+    flex: 1;
+    min-height: 56px;
+    border-radius: 14px;
+    border: 1px solid var(--faint-ink);
+    font-family: sans-serif;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease;
+    box-shadow: var(--numpad-shadow);
+}
+
+.reward-ad-actions button:active {
+    transform: scale(0.96);
+}
+
+#reward-ad-cancel {
+    background: linear-gradient(to bottom, var(--numpad-bg-top), var(--numpad-bg-bottom));
+    color: var(--ink-color);
+}
+
+#reward-ad-confirm {
+    background: var(--accent-red);
+    color: #ffffff;
+    border-color: var(--accent-red);
+    box-shadow: 0 6px 18px rgba(186, 59, 48, 0.35);
+}
+
+#reward-ad-confirm:hover {
+    background: var(--accent-red-hover);
+}.modal {
     position: fixed;
     top: 0;
     left: 0;
