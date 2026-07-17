@@ -2633,22 +2633,61 @@ isMistakeRescueRequestInProgress = false;
     }
 
     if (dailyPlayBtn) {
-        dailyPlayBtn.addEventListener('click', () => {
-            if (dailyChallengeModal) dailyChallengeModal.classList.add('hidden');
+    dailyPlayBtn.addEventListener('click', async () => {
+        if (dailyPlayBtn.disabled) return;
 
-            // Warn if normal game in progress
-            const saved = loadSavedGame();
-            if (saved && !saved.isDailyChallenge) {
-                if (!confirm('Starting the Daily Challenge will pause your current game. Continue?')) return;
-            }
+        const saved = loadSavedGame();
 
-            const todayKey = DailyChallengeEngine.todayKey();
-            const dailyData = DailyChallengeEngine.generateForDate(todayKey);
-            startNewGame(dailyData);
+        if (saved && !saved.isDailyChallenge) {
+            const shouldContinue = await showRewardAdModal({
+                icon: "📅",
+                title: "Start Daily Challenge?",
+                message: "Your current puzzle progress will be saved before starting the Daily Challenge.",
+                confirmText: "Continue",
+                cancelText: "Cancel"
+            });
+
+            if (!shouldContinue) return;
+
             saveGameState();
-            showView('game');
+        }
+
+        const wantsAd = await showRewardAdModal({
+            icon: "🎯",
+            title: "Unlock Daily Challenge",
+            message: "Watch a short ad to play today's special Sudoku challenge.",
+            confirmText: "Watch Ad",
+            cancelText: "Not Now"
         });
-    }
+
+        if (!wantsAd) return;
+
+        if (typeof AdMobService === "undefined") {
+            console.warn("Daily Challenge Rewarded unavailable: AdMobService is not loaded.");
+            return;
+        }
+
+        dailyPlayBtn.disabled = true;
+
+        const rewardEarned = await AdMobService.showDailyChallengeRewardedAd();
+
+        dailyPlayBtn.disabled = false;
+
+        if (!rewardEarned) {
+            console.log("Daily Challenge not started: reward was not earned.");
+            return;
+        }
+
+        if (dailyChallengeModal) dailyChallengeModal.classList.add('hidden');
+
+        const todayKey = DailyChallengeEngine.todayKey();
+        const dailyData = DailyChallengeEngine.generateForDate(todayKey);
+
+        startNewGame(dailyData);
+        saveGameState();
+        showView('game');
+    });
+}
 
     // Home Stats → open existing stats modal
     if (homeStatsBtn) {

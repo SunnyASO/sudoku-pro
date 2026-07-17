@@ -6,6 +6,9 @@ const AdMobService = {
 
     isMistakeRescueLoading: false,
     isMistakeRescueShowing: false,
+    
+    isDailyChallengeRewardedLoading: false,
+    isDailyChallengeRewardedShowing: false,
 
     isCompletionInterstitialLoading: false,
     isCompletionInterstitialShowing: false,
@@ -230,7 +233,68 @@ const AdMobService = {
             return false;
         }
     },
+    
+    async showDailyChallengeRewardedAd() {
+    if (!AdMobConfig.ADS_ENABLED) {
+        console.log("Daily Challenge Rewarded skipped: ADS_ENABLED is false.");
+        return false;
+    }
 
+    if (this.isDailyChallengeRewardedLoading || this.isDailyChallengeRewardedShowing) {
+        console.log("Daily Challenge Rewarded skipped: ad already loading or showing.");
+        return false;
+    }
+
+    const initialized = await this.initialize();
+    if (!initialized) {
+        console.log("Daily Challenge Rewarded skipped: AdMob not initialized.");
+        return false;
+    }
+
+    const adId = this.getAdUnitId("DAILY_CHALLENGE_REWARDED");
+    if (!adId) {
+        console.log("Daily Challenge Rewarded skipped: missing ad unit ID.");
+        return false;
+    }
+
+    try {
+        const AdMob = window.Capacitor.Plugins.AdMob;
+
+        if (!AdMob) {
+            console.warn("Daily Challenge Rewarded unavailable: AdMob plugin not found.");
+            return false;
+        }
+
+        this.isDailyChallengeRewardedLoading = true;
+
+        await AdMob.prepareRewardVideoAd({
+            adId: adId,
+            isTesting: !AdMobConfig.IS_PRODUCTION,
+        });
+
+        this.isDailyChallengeRewardedLoading = false;
+        this.isDailyChallengeRewardedShowing = true;
+
+        const rewardItem = await AdMob.showRewardVideoAd();
+
+        this.isDailyChallengeRewardedShowing = false;
+        this.markAdShown();
+
+        if (rewardItem) {
+            console.log("Daily Challenge Rewarded earned:", rewardItem);
+            return true;
+        }
+
+        console.log("Daily Challenge Rewarded closed without reward.");
+        return false;
+    } catch (error) {
+        this.isDailyChallengeRewardedLoading = false;
+        this.isDailyChallengeRewardedShowing = false;
+
+        console.error("Daily Challenge Rewarded failed:", error);
+        return false;
+    }
+},
     async showCompletionInterstitialAd() {
         if (!AdMobConfig.ADS_ENABLED) {
             console.log("Completion Interstitial skipped: ADS_ENABLED is false.");
