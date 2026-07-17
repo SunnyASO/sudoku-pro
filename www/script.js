@@ -591,7 +591,9 @@ let hintsRemaining = MAX_HINTS;
 let isRewardedHintRequestInProgress = false;
     
     let mistakes = 0;
-    const MAX_MISTAKES = 3;
+const MAX_MISTAKES = 3;
+let mistakeRescueUsedThisGame = false;
+let isMistakeRescueRequestInProgress = false;
     
     let timerInterval = null;
     let secondsElapsed = 0;
@@ -1275,8 +1277,9 @@ let isRewardedHintRequestInProgress = false;
                 updateMistakeUI();
                 StatsEngine.recordMistake();
                 if (mistakes >= MAX_MISTAKES) {
-                    triggerGameOver();
-                }
+    handleMistakeLimitReached();
+    return;
+}
             } else {
                 SoundEngine.playPop();
             }
@@ -1305,7 +1308,45 @@ let isRewardedHintRequestInProgress = false;
             mistakesDisplay.textContent = `Mistakes: ${mistakes}/${MAX_MISTAKES}`;
         }
     }
+     async function handleMistakeLimitReached() {
+    if (isMistakeRescueRequestInProgress) return;
 
+    stopTimer();
+
+    if (mistakeRescueUsedThisGame) {
+        triggerGameOver();
+        return;
+    }
+
+    const wantsRescue = window.confirm("Mistake limit reached. Watch an ad to remove 1 mistake and continue?");
+
+    if (!wantsRescue) {
+        triggerGameOver();
+        return;
+    }
+
+    if (typeof AdMobService === "undefined") {
+        console.warn("Mistake Rescue unavailable: AdMobService is not loaded.");
+        triggerGameOver();
+        return;
+    }
+
+    isMistakeRescueRequestInProgress = true;
+
+    const rewardEarned = await AdMobService.showMistakeRescueAd();
+
+    isMistakeRescueRequestInProgress = false;
+
+    if (rewardEarned) {
+        mistakeRescueUsedThisGame = true;
+        mistakes = Math.max(0, MAX_MISTAKES - 1);
+        updateMistakeUI();
+        saveGameState();
+        resumeTimer();
+    } else {
+        triggerGameOver();
+    }
+}
     function triggerGameOver() {
         stopTimer();
         StatsEngine.recordGameOver();
@@ -1650,7 +1691,9 @@ let isRewardedHintRequestInProgress = false;
         // Reset per-game tracking
         isDailyChallenge = !!dailyData;
         hintsUsedThisGame = 0;
-        mistakesThisGame = 0;
+mistakesThisGame = 0;
+mistakeRescueUsedThisGame = false;
+isMistakeRescueRequestInProgress = false;
 
         // Clear pause state
         if (isPaused) {

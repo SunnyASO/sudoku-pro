@@ -1,7 +1,11 @@
 const AdMobService = {
     isInitialized: false,
+
     isRewardedHintLoading: false,
     isRewardedHintShowing: false,
+
+    isMistakeRescueLoading: false,
+    isMistakeRescueShowing: false,
 
     async initialize() {
         if (!AdMobConfig.ADS_ENABLED) {
@@ -22,9 +26,9 @@ const AdMobService = {
 
             const AdMob = window.Capacitor.Plugins.AdMob;
             if (!AdMob) {
-    window.alert("AdMob plugin not found in native app.");
-    return false;
-}
+                console.warn("AdMob plugin not found in window.Capacitor.Plugins.");
+                return false;
+            }
 
             await AdMob.initialize({
                 requestTrackingAuthorization: true,
@@ -77,6 +81,11 @@ const AdMobService = {
         try {
             const AdMob = window.Capacitor.Plugins.AdMob;
 
+            if (!AdMob) {
+                console.warn("Rewarded Hint unavailable: AdMob plugin not found.");
+                return false;
+            }
+
             this.isRewardedHintLoading = true;
 
             await AdMob.prepareRewardVideoAd({
@@ -103,7 +112,68 @@ const AdMobService = {
             this.isRewardedHintShowing = false;
 
             console.error("Rewarded Hint failed:", error);
-return false;
+            return false;
+        }
+    },
+
+    async showMistakeRescueAd() {
+        if (!AdMobConfig.ADS_ENABLED) {
+            console.log("Mistake Rescue skipped: ADS_ENABLED is false.");
+            return false;
+        }
+
+        if (this.isMistakeRescueLoading || this.isMistakeRescueShowing) {
+            console.log("Mistake Rescue skipped: ad already loading or showing.");
+            return false;
+        }
+
+        const initialized = await this.initialize();
+        if (!initialized) {
+            console.log("Mistake Rescue skipped: AdMob not initialized.");
+            return false;
+        }
+
+        const adId = this.getAdUnitId("REWARDED_MISTAKE_RESCUE");
+        if (!adId) {
+            console.log("Mistake Rescue skipped: missing ad unit ID.");
+            return false;
+        }
+
+        try {
+            const AdMob = window.Capacitor.Plugins.AdMob;
+
+            if (!AdMob) {
+                console.warn("Mistake Rescue unavailable: AdMob plugin not found.");
+                return false;
+            }
+
+            this.isMistakeRescueLoading = true;
+
+            await AdMob.prepareRewardVideoAd({
+                adId: adId,
+                isTesting: !AdMobConfig.IS_PRODUCTION,
+            });
+
+            this.isMistakeRescueLoading = false;
+            this.isMistakeRescueShowing = true;
+
+            const rewardItem = await AdMob.showRewardVideoAd();
+
+            this.isMistakeRescueShowing = false;
+
+            if (rewardItem) {
+                console.log("Mistake Rescue earned:", rewardItem);
+                return true;
+            }
+
+            console.log("Mistake Rescue closed without reward.");
+            return false;
+        } catch (error) {
+            this.isMistakeRescueLoading = false;
+            this.isMistakeRescueShowing = false;
+
+            console.error("Mistake Rescue failed:", error);
+            return false;
         }
     }
 };
