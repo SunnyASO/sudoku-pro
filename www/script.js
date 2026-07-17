@@ -1610,10 +1610,24 @@ let isRewardedHintRequestInProgress = false;
     }
 
     function updateHintUI() {
-    if (hintCountSpan) hintCountSpan.textContent = hintsRemaining;
+    if (hintCountSpan) {
+        if (hintsRemaining <= 0) {
+            hintCountSpan.textContent = "Watch Ad";
+        } else {
+            hintCountSpan.textContent = hintsRemaining;
+        }
+    }
 
     if (hintBtn) {
         hintBtn.disabled = isRewardedHintRequestInProgress;
+
+        if (hintsRemaining <= 0) {
+            hintBtn.title = "Watch ad to get an extra hint";
+            hintBtn.setAttribute("aria-label", "Watch ad to get an extra hint");
+        } else {
+            hintBtn.title = "Use hint";
+            hintBtn.setAttribute("aria-label", "Use hint");
+        }
     }
 }
     
