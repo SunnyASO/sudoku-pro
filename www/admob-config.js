@@ -21,6 +21,11 @@ const AdMobConfig = {
         NEW_GAME_INTERSTITIAL: {
             TEST: "ca-app-pub-3940256099942544/1033173712",
             PRODUCTION: "ca-app-pub-2070129323138107/1233502251"
+        },
+
+        ABANDON_INTERSTITIAL: {
+            TEST: "ca-app-pub-3940256099942544/1033173712",
+            PRODUCTION: "ca-app-pub-2070129323138107/8364062982"
         }
     }
 };

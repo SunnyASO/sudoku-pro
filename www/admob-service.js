@@ -13,6 +13,9 @@ const AdMobService = {
     isNewGameInterstitialLoading: false,
     isNewGameInterstitialShowing: false,
 
+    isAbandonInterstitialLoading: false,
+    isAbandonInterstitialShowing: false,
+
     completionInterstitialsShownThisSession: 0,
     lastAdShownAtMs: 0,
 
@@ -73,7 +76,9 @@ const AdMobService = {
             this.isCompletionInterstitialLoading ||
             this.isCompletionInterstitialShowing ||
             this.isNewGameInterstitialLoading ||
-            this.isNewGameInterstitialShowing
+            this.isNewGameInterstitialShowing ||
+            this.isAbandonInterstitialLoading ||
+            this.isAbandonInterstitialShowing
         );
     },
 
@@ -289,63 +294,124 @@ const AdMobService = {
     },
 
     async showNewGameInterstitialAd() {
-        if (!AdMobConfig.ADS_ENABLED) {
-            console.log("New Game Interstitial skipped: ADS_ENABLED is false.");
-            return false;
-        }
-
-        if (this.isAnyInterstitialBusy()) {
-            console.log("New Game Interstitial skipped: another interstitial is loading or showing.");
-            return false;
-        }
-
-        if (this.isCooldownActive("New Game Interstitial")) {
-            return false;
-        }
-
-        const initialized = await this.initialize();
-        if (!initialized) {
-            console.log("New Game Interstitial skipped: AdMob not initialized.");
-            return false;
-        }
-
-        const adId = this.getAdUnitId("NEW_GAME_INTERSTITIAL");
-        if (!adId) {
-            console.log("New Game Interstitial skipped: missing ad unit ID.");
-            return false;
-        }
-
-        try {
-            const AdMob = window.Capacitor.Plugins.AdMob;
-
-            if (!AdMob) {
-                console.warn("New Game Interstitial unavailable: AdMob plugin not found.");
-                return false;
-            }
-
-            this.isNewGameInterstitialLoading = true;
-
-            await AdMob.prepareInterstitial({
-                adId: adId,
-                isTesting: !AdMobConfig.IS_PRODUCTION,
-            });
-
-            this.isNewGameInterstitialLoading = false;
-            this.isNewGameInterstitialShowing = true;
-
-            await AdMob.showInterstitial();
-
-            this.isNewGameInterstitialShowing = false;
-            this.markAdShown();
-
-            console.log("New Game Interstitial shown.");
-            return true;
-        } catch (error) {
-            this.isNewGameInterstitialLoading = false;
-            this.isNewGameInterstitialShowing = false;
-
-            console.error("New Game Interstitial failed:", error);
-            return false;
-        }
+    if (!AdMobConfig.ADS_ENABLED) {
+        console.log("New Game Interstitial skipped: ADS_ENABLED is false.");
+        return false;
     }
+
+    if (this.isAnyInterstitialBusy()) {
+        console.log("New Game Interstitial skipped: another interstitial is loading or showing.");
+        return false;
+    }
+
+    if (this.isCooldownActive("New Game Interstitial")) {
+        return false;
+    }
+
+    const initialized = await this.initialize();
+    if (!initialized) {
+        console.log("New Game Interstitial skipped: AdMob not initialized.");
+        return false;
+    }
+
+    const adId = this.getAdUnitId("NEW_GAME_INTERSTITIAL");
+    if (!adId) {
+        console.log("New Game Interstitial skipped: missing ad unit ID.");
+        return false;
+    }
+
+    try {
+        const AdMob = window.Capacitor.Plugins.AdMob;
+
+        if (!AdMob) {
+            console.warn("New Game Interstitial unavailable: AdMob plugin not found.");
+            return false;
+        }
+
+        this.isNewGameInterstitialLoading = true;
+
+        await AdMob.prepareInterstitial({
+            adId: adId,
+            isTesting: !AdMobConfig.IS_PRODUCTION,
+        });
+
+        this.isNewGameInterstitialLoading = false;
+        this.isNewGameInterstitialShowing = true;
+
+        await AdMob.showInterstitial();
+
+        this.isNewGameInterstitialShowing = false;
+        this.markAdShown();
+
+        console.log("New Game Interstitial shown.");
+        return true;
+    } catch (error) {
+        this.isNewGameInterstitialLoading = false;
+        this.isNewGameInterstitialShowing = false;
+
+        console.error("New Game Interstitial failed:", error);
+        return false;
+    }
+},
+
+async showAbandonInterstitialAd() {
+    if (!AdMobConfig.ADS_ENABLED) {
+        console.log("Abandon Interstitial skipped: ADS_ENABLED is false.");
+        return false;
+    }
+
+    if (this.isAnyInterstitialBusy()) {
+        console.log("Abandon Interstitial skipped: another interstitial is loading or showing.");
+        return false;
+    }
+
+    if (this.isCooldownActive("Abandon Interstitial")) {
+        return false;
+    }
+
+    const initialized = await this.initialize();
+    if (!initialized) {
+        console.log("Abandon Interstitial skipped: AdMob not initialized.");
+        return false;
+    }
+
+    const adId = this.getAdUnitId("ABANDON_INTERSTITIAL");
+    if (!adId) {
+        console.log("Abandon Interstitial skipped: missing ad unit ID.");
+        return false;
+    }
+
+    try {
+        const AdMob = window.Capacitor.Plugins.AdMob;
+
+        if (!AdMob) {
+            console.warn("Abandon Interstitial unavailable: AdMob plugin not found.");
+            return false;
+        }
+
+        this.isAbandonInterstitialLoading = true;
+
+        await AdMob.prepareInterstitial({
+            adId: adId,
+            isTesting: !AdMobConfig.IS_PRODUCTION,
+        });
+
+        this.isAbandonInterstitialLoading = false;
+        this.isAbandonInterstitialShowing = true;
+
+        await AdMob.showInterstitial();
+
+        this.isAbandonInterstitialShowing = false;
+        this.markAdShown();
+
+        console.log("Abandon Interstitial shown.");
+        return true;
+    } catch (error) {
+        this.isAbandonInterstitialLoading = false;
+        this.isAbandonInterstitialShowing = false;
+
+        console.error("Abandon Interstitial failed:", error);
+        return false;
+    }
+}
 };

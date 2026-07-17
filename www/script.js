@@ -2526,7 +2526,29 @@ isMistakeRescueRequestInProgress = false;
     // ═══════════════════════════════════════════════
     //  HOME SCREEN BUTTON BINDINGS
     // ═══════════════════════════════════════════════
+    async function goHomeFromActiveGameWithAd() {
+    const shouldLeave = confirm("Leave this puzzle and go to Home? Your progress will be saved.");
 
+    if (!shouldLeave) {
+        return;
+    }
+
+    saveGameState();
+
+    if (typeof AdMobService !== "undefined") {
+        await AdMobService.showAbandonInterstitialAd();
+    }
+
+    if (isPaused) {
+        isPaused = false;
+        gameScreen.classList.remove('paused');
+        if (gamePauseBtn) gamePauseBtn.textContent = '⏸';
+        if (pauseModal) pauseModal.classList.add('hidden');
+    }
+
+    stopTimer();
+    showView('home');
+}
     function updateContinueButton() {
         if (!continueGameBtn) return;
         const saved = hasSavedGame();
@@ -2566,23 +2588,17 @@ isMistakeRescueRequestInProgress = false;
 
     // Pause modal — Go to Home
     if (pauseHomeBtn) {
-        pauseHomeBtn.addEventListener('click', () => {
-            resumeGame();        // un-pause state first
-            saveGameState();
-            stopTimer();
-            showView('home');
-        });
-    }
+    pauseHomeBtn.addEventListener('click', () => {
+        goHomeFromActiveGameWithAd();
+    });
+}
 
     // Home Back Button (game screen → home)
     if (homeBackBtn) {
-        homeBackBtn.addEventListener('click', () => {
-            if (isPaused) resumeGame();
-            saveGameState();
-            stopTimer();
-            showView('home');
-        });
-    }
+    homeBackBtn.addEventListener('click', () => {
+        goHomeFromActiveGameWithAd();
+    });
+}
 
     // Daily Challenge — real engine
     const dailyChallengeModal = document.getElementById('daily-challenge-modal');
