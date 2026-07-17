@@ -898,10 +898,14 @@ let isMistakeRescueRequestInProgress = false;
     });
 
     undoBtn.addEventListener('click', performUndo);
-    newGameBtn.addEventListener('click', () => {
-        startNewGame();
-        saveGameState();
-    });
+    newGameBtn.addEventListener('click', async () => {
+    if (typeof AdMobService !== "undefined") {
+        await AdMobService.showNewGameInterstitialAd();
+    }
+
+    startNewGame();
+    saveGameState();
+});
     hintBtn.addEventListener('click', giveHint);
     tryAgainBtn.addEventListener('click', tryAgain);
     restartGameBtn.addEventListener('click', restartGame);

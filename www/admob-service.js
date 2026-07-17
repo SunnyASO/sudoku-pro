@@ -9,6 +9,10 @@ const AdMobService = {
 
     isCompletionInterstitialLoading: false,
     isCompletionInterstitialShowing: false,
+
+    isNewGameInterstitialLoading: false,
+    isNewGameInterstitialShowing: false,
+
     completionInterstitialsShownThisSession: 0,
     lastAdShownAtMs: 0,
 
@@ -64,17 +68,34 @@ const AdMobService = {
         this.lastAdShownAtMs = Date.now();
     },
 
-    canShowCompletionInterstitial() {
+    isAnyInterstitialBusy() {
+        return (
+            this.isCompletionInterstitialLoading ||
+            this.isCompletionInterstitialShowing ||
+            this.isNewGameInterstitialLoading ||
+            this.isNewGameInterstitialShowing
+        );
+    },
+
+    isCooldownActive(label) {
         const cooldownMs = 180 * 1000;
         const now = Date.now();
 
+        if (this.lastAdShownAtMs && now - this.lastAdShownAtMs < cooldownMs) {
+            console.log(`${label} skipped: cooldown active.`);
+            return true;
+        }
+
+        return false;
+    },
+
+    canShowCompletionInterstitial() {
         if (this.completionInterstitialsShownThisSession >= 2) {
             console.log("Completion Interstitial skipped: session limit reached.");
             return false;
         }
 
-        if (this.lastAdShownAtMs && now - this.lastAdShownAtMs < cooldownMs) {
-            console.log("Completion Interstitial skipped: cooldown active.");
+        if (this.isCooldownActive("Completion Interstitial")) {
             return false;
         }
 
@@ -211,8 +232,8 @@ const AdMobService = {
             return false;
         }
 
-        if (this.isCompletionInterstitialLoading || this.isCompletionInterstitialShowing) {
-            console.log("Completion Interstitial skipped: already loading or showing.");
+        if (this.isAnyInterstitialBusy()) {
+            console.log("Completion Interstitial skipped: another interstitial is loading or showing.");
             return false;
         }
 
@@ -263,6 +284,67 @@ const AdMobService = {
             this.isCompletionInterstitialShowing = false;
 
             console.error("Completion Interstitial failed:", error);
+            return false;
+        }
+    },
+
+    async showNewGameInterstitialAd() {
+        if (!AdMobConfig.ADS_ENABLED) {
+            console.log("New Game Interstitial skipped: ADS_ENABLED is false.");
+            return false;
+        }
+
+        if (this.isAnyInterstitialBusy()) {
+            console.log("New Game Interstitial skipped: another interstitial is loading or showing.");
+            return false;
+        }
+
+        if (this.isCooldownActive("New Game Interstitial")) {
+            return false;
+        }
+
+        const initialized = await this.initialize();
+        if (!initialized) {
+            console.log("New Game Interstitial skipped: AdMob not initialized.");
+            return false;
+        }
+
+        const adId = this.getAdUnitId("NEW_GAME_INTERSTITIAL");
+        if (!adId) {
+            console.log("New Game Interstitial skipped: missing ad unit ID.");
+            return false;
+        }
+
+        try {
+            const AdMob = window.Capacitor.Plugins.AdMob;
+
+            if (!AdMob) {
+                console.warn("New Game Interstitial unavailable: AdMob plugin not found.");
+                return false;
+            }
+
+            this.isNewGameInterstitialLoading = true;
+
+            await AdMob.prepareInterstitial({
+                adId: adId,
+                isTesting: !AdMobConfig.IS_PRODUCTION,
+            });
+
+            this.isNewGameInterstitialLoading = false;
+            this.isNewGameInterstitialShowing = true;
+
+            await AdMob.showInterstitial();
+
+            this.isNewGameInterstitialShowing = false;
+            this.markAdShown();
+
+            console.log("New Game Interstitial shown.");
+            return true;
+        } catch (error) {
+            this.isNewGameInterstitialLoading = false;
+            this.isNewGameInterstitialShowing = false;
+
+            console.error("New Game Interstitial failed:", error);
             return false;
         }
     }
