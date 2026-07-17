@@ -18,6 +18,11 @@ const AdMobConfig = {
             PRODUCTION: "ca-app-pub-2070129323138107/4424817979"
         },
 
+        BONUS_REWARDED: {
+            TEST: "ca-app-pub-3940256099942544/5224354917",
+            PRODUCTION: "ca-app-pub-2070129323138107/6396375193"
+        },
+
         COMPLETION_INTERSTITIAL: {
             TEST: "ca-app-pub-3940256099942544/1033173712",
             PRODUCTION: "ca-app-pub-2070129323138107/6126736289"

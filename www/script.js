@@ -557,7 +557,9 @@ let rewardAdModalResolve = null;
     const victoryReplayBtn = document.getElementById('victory-replay-btn');
     const victoryShareBtn = document.getElementById('victory-share-btn');
     const victoryHomeBtn = document.getElementById('victory-home-btn');
+    const victoryBonusBtn = document.getElementById('victory-bonus-btn');
     let completedPuzzleSnapshot = null;
+    let bonusRewardClaimedForCurrentVictory = false;
 let completionNavigationCountThisSession = 0;
 let isCompletionNavigationInProgress = false;
 
@@ -1010,7 +1012,42 @@ if (rewardAdConfirm) {
             }
         });
     }
+    if (victoryBonusBtn) {
+    victoryBonusBtn.addEventListener('click', async () => {
+        if (bonusRewardClaimedForCurrentVictory) return;
 
+        const wantsBonus = await showRewardAdModal({
+            icon: "🎁",
+            title: "Claim Bonus Hint",
+            message: "Watch a short ad to get +1 extra hint for your next puzzle.",
+            confirmText: "Watch Ad",
+            cancelText: "Not Now"
+        });
+
+        if (!wantsBonus) return;
+
+        if (typeof AdMobService === "undefined") {
+            console.warn("Bonus Rewarded unavailable: AdMobService is not loaded.");
+            return;
+        }
+
+        victoryBonusBtn.disabled = true;
+        victoryBonusBtn.textContent = "Loading Bonus...";
+
+        const rewardEarned = await AdMobService.showBonusRewardedAd();
+
+        if (rewardEarned) {
+            bonusRewardClaimedForCurrentVictory = true;
+            setPendingBonusHints(getPendingBonusHints() + 1);
+
+            victoryBonusBtn.textContent = "✅ Bonus Hint Claimed";
+            victoryBonusBtn.disabled = true;
+        } else {
+            victoryBonusBtn.textContent = "🎁 Claim Bonus Hint";
+            victoryBonusBtn.disabled = false;
+        }
+    });
+}
     if (victoryShareBtn) {
         victoryShareBtn.addEventListener('click', async () => {
             if (!completedPuzzleSnapshot) return;
@@ -1152,7 +1189,26 @@ if (rewardAdConfirm) {
             tutorialSkipBtn.style.display = 'flex'; // Restore visibility
         }
     }
+    function getPendingBonusHints() {
+    return parseInt(localStorage.getItem('sudoku-pending-bonus-hints') || '0', 10);
+}
 
+function setPendingBonusHints(value) {
+    localStorage.setItem('sudoku-pending-bonus-hints', Math.max(0, value).toString());
+}
+
+function applyPendingBonusHintsForNewPuzzle() {
+    const pendingBonusHints = getPendingBonusHints();
+
+    if (pendingBonusHints <= 0) {
+        return;
+    }
+
+    hintsRemaining += pendingBonusHints;
+    setPendingBonusHints(0);
+
+    console.log(`Applied ${pendingBonusHints} bonus hint(s) to this puzzle.`);
+}
     function showRewardAdModal({ icon, title, message, confirmText, cancelText }) {
     return new Promise((resolve) => {
         if (!rewardAdModal || !rewardAdConfirm || !rewardAdCancel) {
@@ -1615,7 +1671,13 @@ const wantsRescue = await showRewardAdModal({
                         }
                     }
 
-                    victoryModal.classList.remove('hidden');
+                  bonusRewardClaimedForCurrentVictory = false;
+
+                 if (victoryBonusBtn) {
+                     victoryBonusBtn.textContent = "🎁 Claim Bonus Hint";
+                     victoryBonusBtn.disabled = false;
+}   
+                  victoryModal.classList.remove('hidden');
                 } else {
                     alert(`Congratulations! Puzzle solved in ${timerDisplay.textContent}.`);
                     startNewGame();
@@ -1801,10 +1863,12 @@ isMistakeRescueRequestInProgress = false;
         undoStack = [];
         undosRemaining = MAX_UNDOS;
         hintsRemaining = MAX_HINTS;
-        mistakes = 0;
-        updateMistakeUI();
-        updateUndoUI();
-        updateHintUI();
+applyPendingBonusHintsForNewPuzzle();
+
+mistakes = 0;
+updateMistakeUI();
+updateUndoUI();
+updateHintUI();
         if (selectedCell) {
             selectedCell.classList.remove('selected');
             selectedCell = null;

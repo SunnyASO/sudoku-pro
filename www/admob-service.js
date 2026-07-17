@@ -10,6 +10,9 @@ const AdMobService = {
     isDailyChallengeRewardedLoading: false,
     isDailyChallengeRewardedShowing: false,
 
+    isBonusRewardedLoading: false,
+    isBonusRewardedShowing: false,
+
     isCompletionInterstitialLoading: false,
     isCompletionInterstitialShowing: false,
 
@@ -292,6 +295,68 @@ const AdMobService = {
         this.isDailyChallengeRewardedShowing = false;
 
         console.error("Daily Challenge Rewarded failed:", error);
+        return false;
+    }
+},
+
+    async showBonusRewardedAd() {
+    if (!AdMobConfig.ADS_ENABLED) {
+        console.log("Bonus Rewarded skipped: ADS_ENABLED is false.");
+        return false;
+    }
+
+    if (this.isBonusRewardedLoading || this.isBonusRewardedShowing) {
+        console.log("Bonus Rewarded skipped: ad already loading or showing.");
+        return false;
+    }
+
+    const initialized = await this.initialize();
+    if (!initialized) {
+        console.log("Bonus Rewarded skipped: AdMob not initialized.");
+        return false;
+    }
+
+    const adId = this.getAdUnitId("BONUS_REWARDED");
+    if (!adId) {
+        console.log("Bonus Rewarded skipped: missing ad unit ID.");
+        return false;
+    }
+
+    try {
+        const AdMob = window.Capacitor.Plugins.AdMob;
+
+        if (!AdMob) {
+            console.warn("Bonus Rewarded unavailable: AdMob plugin not found.");
+            return false;
+        }
+
+        this.isBonusRewardedLoading = true;
+
+        await AdMob.prepareRewardVideoAd({
+            adId: adId,
+            isTesting: !AdMobConfig.IS_PRODUCTION,
+        });
+
+        this.isBonusRewardedLoading = false;
+        this.isBonusRewardedShowing = true;
+
+        const rewardItem = await AdMob.showRewardVideoAd();
+
+        this.isBonusRewardedShowing = false;
+        this.markAdShown();
+
+        if (rewardItem) {
+            console.log("Bonus Rewarded earned:", rewardItem);
+            return true;
+        }
+
+        console.log("Bonus Rewarded closed without reward.");
+        return false;
+    } catch (error) {
+        this.isBonusRewardedLoading = false;
+        this.isBonusRewardedShowing = false;
+
+        console.error("Bonus Rewarded failed:", error);
         return false;
     }
 },
