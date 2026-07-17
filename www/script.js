@@ -2527,15 +2527,24 @@ isMistakeRescueRequestInProgress = false;
     //  HOME SCREEN BUTTON BINDINGS
     // ═══════════════════════════════════════════════
     async function goHomeFromActiveGameWithAd() {
+    const wasPausedBeforePrompt = isPaused;
+
+    if (wasPausedBeforePrompt && pauseModal) {
+        pauseModal.classList.add('hidden');
+    }
+
     const shouldLeave = await showRewardAdModal({
-    icon: "🏠",
-    title: "Go to Home?",
-    message: "Your puzzle progress will be saved before leaving.",
-    confirmText: "Go Home",
-    cancelText: "Keep Playing"
-});
+        icon: "🏠",
+        title: "Go to Home?",
+        message: "Your puzzle progress will be saved before leaving.",
+        confirmText: "Go Home",
+        cancelText: "Keep Playing"
+    });
 
     if (!shouldLeave) {
+        if (wasPausedBeforePrompt && pauseModal) {
+            pauseModal.classList.remove('hidden');
+        }
         return;
     }
 

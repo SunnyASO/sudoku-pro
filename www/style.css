@@ -1943,3 +1943,95 @@ body.night-mode @keyframes victory-fade-in {
 .cal-play-btn {
     width: 100%;
 }
+.reward-ad-card {
+    width: min(88vw, 360px);
+    max-width: 360px;
+}
+
+.reward-ad-actions {
+    display: flex;
+    gap: 14px;
+    margin-top: 12px;
+}
+
+.reward-ad-actions button {
+    flex: 1;
+    min-height: 58px;
+    border-radius: 16px;
+    border: 1px solid var(--faint-ink);
+    font-family: sans-serif;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    box-shadow: var(--numpad-shadow);
+    transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.reward-ad-actions button:active {
+    transform: scale(0.96);
+}
+
+#reward-ad-cancel {
+    background: linear-gradient(to bottom, var(--numpad-bg-top), var(--numpad-bg-bottom));
+    color: var(--ink-color);
+}
+
+#reward-ad-confirm {
+    background: var(--accent-red);
+    color: #ffffff;
+    border-color: var(--accent-red);
+    box-shadow: 0 7px 18px rgba(186, 59, 48, 0.35);
+}
+
+#reward-ad-confirm:hover {
+    background: var(--accent-red-hover);
+}
+
+.reward-ad-card {
+    width: min(88vw, 360px);
+    max-width: 360px;
+}
+
+.reward-ad-actions {
+    display: flex;
+    gap: 14px;
+    margin-top: 14px;
+}
+
+.reward-ad-actions button {
+    flex: 1;
+    min-height: 58px;
+    border-radius: 16px;
+    border: 1px solid var(--faint-ink);
+    font-family: sans-serif;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    box-shadow: var(--numpad-shadow);
+    transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.reward-ad-actions button:active {
+    transform: scale(0.96);
+}
+
+#reward-ad-cancel {
+    background: linear-gradient(to bottom, var(--numpad-bg-top), var(--numpad-bg-bottom));
+    color: var(--ink-color);
+}
+
+#reward-ad-confirm {
+    background: var(--accent-red);
+    color: #ffffff;
+    border-color: var(--accent-red);
+    box-shadow: 0 7px 18px rgba(186, 59, 48, 0.35);
+}
+
+#reward-ad-confirm:hover {
+    background: var(--accent-red-hover);
+}
+#reward-ad-modal {
+    z-index: 9999;
+}
