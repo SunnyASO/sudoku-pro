@@ -89,7 +89,7 @@ const AdMobService = {
     },
 
     isCooldownActive(label) {
-        const cooldownMs = 180 * 1000;
+        const cooldownMs = 120 * 1000;
         const now = Date.now();
 
         if (this.lastAdShownAtMs && now - this.lastAdShownAtMs < cooldownMs) {
