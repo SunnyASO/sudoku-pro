@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_stack" name="shell-type"/><title>Sudoku Pro - Solve</title><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#fbf9f4;color:#1b1c19;}body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "on-secondary-container": "#785a1a", "surface-container-low": "#f5f3ee", "surface-container-highest": "#e4e2dd", "background": "#fbf9f4", "outline": "#74777c", "tertiary-container": "#470800", "primary-fixed-dim": "#bbc8d9", "error-container": "#ffdad6", "error": "#ba1a1a", "tertiary": "#1d0200", "on-secondary": "#ffffff", "secondary-fixed": "#ffdea5", "on-error": "#ffffff", "surface-container-lowest": "#ffffff", "primary-fixed": "#d7e4f6", "tertiary-fixed-dim": "#ffb4a3", "on-tertiary-fixed": "#3d0600", "surface": "#fbf9f4", "on-surface": "#1b1c19", "on-primary-fixed-variant": "#3c4856", "surface-container": "#f0eee9", "on-tertiary": "#ffffff", "secondary-fixed-dim": "#e9c176", "surface-variant": "#e4e2dd", "inverse-surface": "#30312e", "surface-dim": "#dbdad5", "on-surface-variant": "#44474c", "tertiary-fixed": "#ffdad2", "secondary-container": "#fed488", "primary": "#010b17", "secondary": "#775a19", "surface-container-high": "#eae8e3", "primary-container": "#16222f", "inverse-on-surface": "#f2f1ec", "on-secondary-fixed": "#261900", "on-primary-container": "#7d8a9a", "on-tertiary-container": "#d8674d", "on-secondary-fixed-variant": "#5d4201", "on-primary": "#ffffff", "on-error-container": "#93000a", "inverse-primary": "#bbc8d9", "surface-bright": "#fbf9f4", "outline-variant": "#c4c6cc", "on-primary-fixed": "#101c29", "on-background": "#1b1c19", "surface-tint": "#535f6e", "on-tertiary-fixed-variant": "#822714" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, spacing: { "margin-mobile": "1rem", "gutter-mobile": "0.75rem", "space-lg": "1.5rem", "space-md": "1rem", "space-xs": "0.25rem", "space-sm": "0.5rem", "space-xl": "2rem", "gutter": "1rem", "margin": "1.5rem" }, fontFamily: { "label-sm": ["Plus Jakarta Sans"], "grid-number": ["Plus Jakarta Sans"], "label-md": ["Plus Jakarta Sans"], "body-md": ["Plus Jakarta Sans"], "grid-pencil": ["Plus Jakarta Sans"], "headline-md": ["Newsreader"], "label-lg": ["Plus Jakarta Sans"], "headline-sm": ["Plus Jakarta Sans"], "headline-lg": ["Newsreader"], "display-lg": ["Newsreader"], "display-lg-mobile": ["Newsreader"], "body-lg": ["Plus Jakarta Sans"], "body-sm": ["Plus Jakarta Sans"] }, fontSize: { "label-sm": ["10px", { "lineHeight": "14px", "letterSpacing": "0.05em", "fontWeight": "700" }], "grid-number": ["24px", { "lineHeight": "24px", "fontWeight": "500" }], "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.03em", "fontWeight": "600" }], "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }], "grid-pencil": ["10px", { "lineHeight": "10px", "fontWeight": "600" }], "headline-md": ["22px", { "lineHeight": "30px", "fontWeight": "600" }], "label-lg": ["14px", { "lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600" }], "headline-sm": ["18px", { "lineHeight": "24px", "fontWeight": "600" }], "headline-lg": ["28px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600" }], "display-lg": ["40px", { "lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "500" }], "display-lg-mobile": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "500" }], "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }], "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }] } } } }</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface font-body-md text-body-md text-on-surface flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="px-gutter h-6 flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm"><span class="font-label-sm text-label-sm tracking-tight text-on-surface font-semibold">9:41</span><div class="flex items-center gap-1.5 text-on-surface-variant"><span class="material-symbols-outlined text-[14px]">wifi</span><span class="material-symbols-outlined text-[14px]">signal_cellular_4_bar</span><span class="material-symbols-outlined text-[14px]">battery_full</span></div></div><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-2"><button aria-label="Back to Puzzles" class="w-11 h-11 -ml-2 rounded-full flex items-center justify-center text-on-surface hover:bg-surface-container transition-colors" onclick="history.back()"><span class="material-symbols-outlined text-[24px]">arrow_back</span></button><div class="flex flex-col"><span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary font-bold">Active Puzzle</span><span class="font-label-md text-label-md text-on-surface-variant flex items-center gap-1">Mistakes: <strong class="text-error font-semibold">0/3</strong></span></div></div><div class="flex items-center gap-2"><div class="px-3 py-1 rounded-full bg-surface-container flex items-center gap-1.5 text-on-surface font-label-md text-label-md"><span class="material-symbols-outlined text-[16px] text-on-surface-variant">timer</span><span class="tracking-wide font-medium font-grid-pencil text-grid-pencil">04:28</span></div><button aria-label="Pause Game" class="w-11 h-11 rounded-full flex items-center justify-center text-on-surface hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-[22px]">pause</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-1"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-20 pb-safe px-margin-mobile bg-surface min-h-screen"><div class="flex flex-col w-full pb-6 space-y-4">
+<!-- Editorial Edition Meta Bar -->
+<div class="flex items-center justify-between px-1 py-1">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary">The Morning Edition</span>
+<span class="font-headline-sm text-headline-sm text-primary tracking-tight font-semibold">Broadsheet No. 418</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="px-2.5 py-1 rounded-full bg-secondary-container/50 text-on-secondary-container font-label-sm text-label-sm font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]" style="font-variation-settings: 'FILL' 1;">workspace_premium</span>
+        Pristine Finish
+      </span>
+<button aria-label="Dismiss view" class="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors" onclick="window.history.back()">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+</div>
+</div>
+<!-- Hero Celebration Section -->
+<div class="relative flex flex-col items-center text-center pt-2 pb-1 overflow-hidden">
+<!-- Subtle Laurel & Sunburst Emblem -->
+<div class="relative w-28 h-28 flex items-center justify-center mb-3">
+<!-- Ambient Glow Behind Trophy -->
+<div class="absolute inset-0 rounded-full bg-secondary-fixed/40 blur-xl"></div>
+<!-- Decorative Circular Radial Rings -->
+<svg class="absolute inset-0 w-full h-full text-secondary/20 animate-[spin_40s_linear_infinite]" viewbox="0 0 100 100">
+<circle cx="50" cy="50" fill="none" r="46" stroke="currentColor" stroke-dasharray="2 4" stroke-width="1"></circle>
+<circle cx="50" cy="50" fill="none" r="41" stroke="currentColor" stroke-width="0.5"></circle>
+</svg>
+<!-- Laurel Wreath & Badge Art -->
+<div class="relative z-10 w-20 h-20 rounded-full bg-surface-container-lowest shadow-md flex flex-col items-center justify-center">
+<div class="w-14 h-14 rounded-full bg-secondary-container flex items-center justify-center shadow-inner">
+<span class="material-symbols-outlined text-on-secondary-container text-[30px]" style="font-variation-settings: 'FILL' 1;">military_tech</span>
+</div>
+</div>
+<!-- Golden Triple Star Tier -->
+<div class="absolute -bottom-1 z-20 flex items-center gap-1 bg-surface-container-lowest px-2.5 py-0.5 rounded-full shadow-sm">
+<span class="material-symbols-outlined text-[15px] text-secondary" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="material-symbols-outlined text-[18px] text-secondary" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="material-symbols-outlined text-[15px] text-secondary" style="font-variation-settings: 'FILL' 1;">star</span>
+</div>
+</div>
+<!-- Editorial Typography Group -->
+<h1 class="font-display-lg-mobile text-display-lg-mobile text-primary tracking-tight font-headline-lg">
+      Puzzle Solved!
+    </h1>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-[280px] mt-1 text-balance">
+      Splendid deduction. You mastered this Medium grid with quiet discipline.
+    </p>
+</div>
+<!-- Performance Statistics Bento Card -->
+<div class="bg-surface-container-lowest rounded-xl p-4 shadow-sm flex flex-col space-y-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-secondary font-semibold">analytics</span>
+<span class="font-label-md text-label-md text-on-surface tracking-wide uppercase">Performance Ledger</span>
+</div>
+<span class="font-label-sm text-label-sm text-secondary font-bold">100% ACCURACY</span>
+</div>
+<!-- 2x2 Bento Matrix -->
+<div class="grid grid-cols-2 gap-2.5">
+<!-- Time (Hero Tile) -->
+<div class="col-span-2 bg-surface-container-low rounded-lg p-3 flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">timer</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Solving Time</span>
+<span class="font-headline-sm text-headline-sm text-primary font-semibold font-grid-number">06:14</span>
+</div>
+</div>
+<div class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm font-bold shadow-xs">
+<span class="material-symbols-outlined text-[13px]" style="font-variation-settings: 'FILL' 1;">bolt</span>
+<span>NEW BEST!</span>
+</div>
+</div>
+<!-- Difficulty -->
+<div class="bg-surface-container-low rounded-lg p-2.5 flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Difficulty</span>
+<div class="flex items-center gap-1.5 mt-0.5">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="font-label-lg text-label-lg text-primary font-bold">Medium</span>
+</div>
+</div>
+<!-- Mistakes -->
+<div class="bg-surface-container-low rounded-lg p-2.5 flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Mistakes</span>
+<span class="font-label-lg text-label-lg text-primary font-bold mt-0.5">1 <span class="text-on-surface-variant font-normal">/ 3</span></span>
+</div>
+<!-- Hints Used -->
+<div class="bg-surface-container-low rounded-lg p-2.5 flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Hints Used</span>
+<div class="flex items-center gap-1 mt-0.5">
+<span class="font-label-lg text-label-lg text-primary font-bold">0</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">(Pure Logic)</span>
+</div>
+</div>
+<!-- Score Points Earned -->
+<div class="bg-surface-container-low rounded-lg p-2.5 flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Score Added</span>
+<span class="font-label-lg text-label-lg text-secondary font-bold mt-0.5">+2,850 pts</span>
+</div>
+</div>
+</div>
+<!-- Daily Streak & Calendar Meta Ribbon -->
+<div class="bg-surface-container-lowest rounded-xl p-3.5 shadow-sm flex flex-col space-y-2.5">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-full bg-secondary-fixed flex items-center justify-center text-on-secondary-fixed">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">local_fire_department</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-lg text-label-lg text-primary font-bold">15-Day Streak</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Daily Broadsheet habit maintained</span>
+</div>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-surface-container text-on-surface font-label-sm text-label-sm font-semibold">Week 18</span>
+</div>
+<!-- Mon-Sun Tracker Dots -->
+<div class="grid grid-cols-7 gap-1 pt-1">
+<!-- Mon -->
+<div class="flex flex-col items-center space-y-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant">M</span>
+<div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined text-[14px]">check</span>
+</div>
+</div>
+<!-- Tue -->
+<div class="flex flex-col items-center space-y-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant">T</span>
+<div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined text-[14px]">check</span>
+</div>
+</div>
+<!-- Wed -->
+<div class="flex flex-col items-center space-y-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant">W</span>
+<div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined text-[14px]">check</span>
+</div>
+</div>
+<!-- Thu -->
+<div class="flex flex-col items-center space-y-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant">T</span>
+<div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined text-[14px]">check</span>
+</div>
+</div>
+<!-- Fri (Today) -->
+<div class="flex flex-col items-center space-y-1">
+<span class="font-label-sm text-label-sm text-secondary font-bold">F</span>
+<div class="w-6 h-6 rounded-full bg-secondary text-on-secondary flex items-center justify-center shadow-xs">
+<span class="material-symbols-outlined text-[14px]">check</span>
+</div>
+</div>
+<!-- Sat -->
+<div class="flex flex-col items-center space-y-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant">S</span>
+<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center text-outline">
+<span class="w-1.5 h-1.5 rounded-full bg-outline-variant"></span>
+</div>
+</div>
+<!-- Sun -->
+<div class="flex flex-col items-center space-y-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant">S</span>
+<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center text-outline">
+<span class="w-1.5 h-1.5 rounded-full bg-outline-variant"></span>
+</div>
+</div>
+</div>
+</div>
+<!-- Rewarded Multiplier Engagement Banner -->
+<div class="bg-surface-container-high rounded-xl p-3 shadow-xs flex items-center justify-between">
+<div class="flex items-center gap-2.5 min-w-0 pr-2">
+<div class="w-9 h-9 shrink-0 rounded-lg bg-secondary-container text-on-secondary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">smart_display</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-md text-label-md text-primary font-bold truncate">Double Score Bonus</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Watch a quick sponsor clip for +5,700 pts</span>
+</div>
+</div>
+<button class="shrink-0 px-3.5 py-2 rounded-lg bg-secondary text-on-secondary font-label-md text-label-md font-bold flex items-center gap-1 shadow-sm active:scale-95 transition-transform" id="claim2xBtn">
+<span class="material-symbols-outlined text-[16px]">stars</span>
+<span>2x Claim</span>
+</button>
+</div>
+<!-- Tactile Action CTAs (Ergonomic Lower Zone) -->
+<div class="flex flex-col space-y-2 pt-1">
+<!-- Primary CTA: Next Puzzle -->
+<button class="w-full py-3.5 px-4 rounded-xl bg-primary-container text-surface-container-lowest font-label-lg text-label-lg font-bold flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all">
+<span>Next Broadsheet Puzzle</span>
+<span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</button>
+<!-- Secondary Row: Share Result & Return Home -->
+<div class="grid grid-cols-2 gap-2">
+<button class="py-2.5 px-3 rounded-xl bg-surface-container-lowest text-primary font-label-md text-label-md font-semibold flex items-center justify-center gap-1.5 shadow-sm active:bg-surface-container transition-colors" id="shareBtn">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">ios_share</span>
+<span>Share Result</span>
+</button>
+<button class="py-2.5 px-3 rounded-xl bg-surface-container-lowest text-primary font-label-md text-label-md font-semibold flex items-center justify-center gap-1.5 shadow-sm active:bg-surface-container transition-colors" onclick="window.history.back()">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">home</span>
+<span>Puzzle Archive</span>
+</button>
+</div>
+</div>
+<!-- Adaptive Monetization Buffer Slot -->
+<div class="w-full h-12 rounded-lg bg-surface-container-low flex flex-col items-center justify-center">
+<span class="font-label-sm text-label-sm text-outline-variant uppercase tracking-widest text-[9px]">Sponsor Broadside</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant font-medium">The Solvers' Society • Quarterly Gazette</span>
+</div>
+</div>
+<script>
+  // Simple micro-interaction for celebratory share & claim feedback
+  document.getElementById('shareBtn')?.addEventListener('click', function() {
+    const originalText = this.innerHTML;
+    this.innerHTML = '<span class="material-symbols-outlined text-[18px] text-secondary">check_circle</span><span>Copied!</span>';
+    setTimeout(() => {
+      this.innerHTML = originalText;
+    }, 2000);
+  });
+
+  document.getElementById('claim2xBtn')?.addEventListener('click', function() {
+    this.disabled = true;
+    this.classList.add('opacity-75');
+    this.innerHTML = '<span class="material-symbols-outlined text-[16px] animate-spin">refresh</span><span>Unlocking...</span>';
+    setTimeout(() => {
+      this.innerHTML = '<span class="material-symbols-outlined text-[16px]">check</span><span>Claimed!</span>';
+      this.classList.remove('bg-secondary');
+      this.classList.add('bg-primary');
+    }, 1200);
+  });
+</script></main></body></html>

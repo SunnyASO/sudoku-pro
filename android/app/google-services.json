@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "183640608238",
+    "project_id": "sudoku-4cfd4",
+    "storage_bucket": "sudoku-4cfd4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:183640608238:android:e6fb2e32597bc94700d2ff",
+        "android_client_info": {
+          "package_name": "com.appsedifice.sudokupro.logicpuzzle"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAe8QoDbHsAmYjokRIXs7lZaRWzXVSfBvk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_stack" name="shell-type"/><title>Sudoku Pro - Solve</title><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#fbf9f4;color:#1b1c19;}body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "on-secondary-container": "#785a1a", "surface-container-low": "#f5f3ee", "surface-container-highest": "#e4e2dd", "background": "#fbf9f4", "outline": "#74777c", "tertiary-container": "#470800", "primary-fixed-dim": "#bbc8d9", "error-container": "#ffdad6", "error": "#ba1a1a", "tertiary": "#1d0200", "on-secondary": "#ffffff", "secondary-fixed": "#ffdea5", "on-error": "#ffffff", "surface-container-lowest": "#ffffff", "primary-fixed": "#d7e4f6", "tertiary-fixed-dim": "#ffb4a3", "on-tertiary-fixed": "#3d0600", "surface": "#fbf9f4", "on-surface": "#1b1c19", "on-primary-fixed-variant": "#3c4856", "surface-container": "#f0eee9", "on-tertiary": "#ffffff", "secondary-fixed-dim": "#e9c176", "surface-variant": "#e4e2dd", "inverse-surface": "#30312e", "surface-dim": "#dbdad5", "on-surface-variant": "#44474c", "tertiary-fixed": "#ffdad2", "secondary-container": "#fed488", "primary": "#010b17", "secondary": "#775a19", "surface-container-high": "#eae8e3", "primary-container": "#16222f", "inverse-on-surface": "#f2f1ec", "on-secondary-fixed": "#261900", "on-primary-container": "#7d8a9a", "on-tertiary-container": "#d8674d", "on-secondary-fixed-variant": "#5d4201", "on-primary": "#ffffff", "on-error-container": "#93000a", "inverse-primary": "#bbc8d9", "surface-bright": "#fbf9f4", "outline-variant": "#c4c6cc", "on-primary-fixed": "#101c29", "on-background": "#1b1c19", "surface-tint": "#535f6e", "on-tertiary-fixed-variant": "#822714" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, spacing: { "margin-mobile": "1rem", "gutter-mobile": "0.75rem", "space-lg": "1.5rem", "space-md": "1rem", "space-xs": "0.25rem", "space-sm": "0.5rem", "space-xl": "2rem", "gutter": "1rem", "margin": "1.5rem" }, fontFamily: { "label-sm": ["Plus Jakarta Sans"], "grid-number": ["Plus Jakarta Sans"], "label-md": ["Plus Jakarta Sans"], "body-md": ["Plus Jakarta Sans"], "grid-pencil": ["Plus Jakarta Sans"], "headline-md": ["Newsreader"], "label-lg": ["Plus Jakarta Sans"], "headline-sm": ["Plus Jakarta Sans"], "headline-lg": ["Newsreader"], "display-lg": ["Newsreader"], "display-lg-mobile": ["Newsreader"], "body-lg": ["Plus Jakarta Sans"], "body-sm": ["Plus Jakarta Sans"] }, fontSize: { "label-sm": ["10px", { "lineHeight": "14px", "letterSpacing": "0.05em", "fontWeight": "700" }], "grid-number": ["24px", { "lineHeight": "24px", "fontWeight": "500" }], "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.03em", "fontWeight": "600" }], "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }], "grid-pencil": ["10px", { "lineHeight": "10px", "fontWeight": "600" }], "headline-md": ["22px", { "lineHeight": "30px", "fontWeight": "600" }], "label-lg": ["14px", { "lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600" }], "headline-sm": ["18px", { "lineHeight": "24px", "fontWeight": "600" }], "headline-lg": ["28px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600" }], "display-lg": ["40px", { "lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "500" }], "display-lg-mobile": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "500" }], "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }], "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }] } } } }</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface font-body-md text-body-md text-on-surface flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="px-gutter h-6 flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm"><span class="font-label-sm text-label-sm tracking-tight text-on-surface font-semibold">9:41</span><div class="flex items-center gap-1.5 text-on-surface-variant"><span class="material-symbols-outlined text-[14px]">wifi</span><span class="material-symbols-outlined text-[14px]">signal_cellular_4_bar</span><span class="material-symbols-outlined text-[14px]">battery_full</span></div></div><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-2"><button aria-label="Back to Puzzles" class="w-11 h-11 -ml-2 rounded-full flex items-center justify-center text-on-surface hover:bg-surface-container transition-colors" onclick="history.back()"><span class="material-symbols-outlined text-[24px]">arrow_back</span></button><div class="flex flex-col"><span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary font-bold">Active Puzzle</span><span class="font-label-md text-label-md text-on-surface-variant flex items-center gap-1">Mistakes: <strong class="text-error font-semibold">0/3</strong></span></div></div><div class="flex items-center gap-2"><div class="px-3 py-1 rounded-full bg-surface-container flex items-center gap-1.5 text-on-surface font-label-md text-label-md"><span class="material-symbols-outlined text-[16px] text-on-surface-variant">timer</span><span class="tracking-wide font-medium font-grid-pencil text-grid-pencil">04:28</span></div><button aria-label="Pause Game" class="w-11 h-11 rounded-full flex items-center justify-center text-on-surface hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-[22px]">pause</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-1"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-20 pb-safe px-margin-mobile bg-surface min-h-screen"><div class="flex flex-col w-full relative">
+<!-- Underlying Active Game Board & Utility Scaffolding (Blurred in Background) -->
+<div class="w-full flex flex-col items-center select-none pointer-events-none opacity-85 scale-[0.98] origin-top transition-transform duration-300">
+<!-- Sudoku Grid Preview (Frozen State) -->
+<div class="w-full max-w-[360px] aspect-square bg-surface-container-lowest rounded-xl shadow-md p-1.5 flex flex-col justify-between">
+<div class="grid grid-cols-3 gap-1 w-full h-full bg-surface-container-high rounded-lg p-0.5">
+<!-- Block 1 -->
+<div class="grid grid-cols-3 gap-0.5 bg-surface-container-low p-0.5 rounded">
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">5</div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-on-surface-variant bg-surface-container-lowest rounded-sm">3</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm">1 2</div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-on-surface-variant bg-surface-container-lowest rounded-sm">6</div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">7</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm">4 8</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm">9</div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-on-surface-variant bg-surface-container-lowest rounded-sm">9</div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">8</div>
+</div>
+<!-- Block 2 -->
+<div class="grid grid-cols-3 gap-0.5 bg-surface-container-low p-0.5 rounded">
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm">6 7</div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">7</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">1</div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-on-surface-variant bg-surface-container-lowest rounded-sm">9</div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">5</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm">3 4</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+</div>
+<!-- Block 3 -->
+<div class="grid grid-cols-3 gap-0.5 bg-surface-container-low p-0.5 rounded">
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm">8</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">6</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+</div>
+<!-- Block 4 -->
+<div class="grid grid-cols-3 gap-0.5 bg-surface-container-low p-0.5 rounded">
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">8</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">4</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">7</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+</div>
+<!-- Block 5 -->
+<div class="grid grid-cols-3 gap-0.5 bg-surface-container-low p-0.5 rounded">
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">6</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm">2</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">8</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+</div>
+<!-- Block 6 -->
+<div class="grid grid-cols-3 gap-0.5 bg-surface-container-low p-0.5 rounded">
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">3</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">1</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">9</div>
+</div>
+<!-- Block 7 -->
+<div class="grid grid-cols-3 gap-0.5 bg-surface-container-low p-0.5 rounded">
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">4</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+</div>
+<!-- Block 8 -->
+<div class="grid grid-cols-3 gap-0.5 bg-surface-container-low p-0.5 rounded">
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">2</div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">8</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm">5</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+</div>
+<!-- Block 9 -->
+<div class="grid grid-cols-3 gap-0.5 bg-surface-container-low p-0.5 rounded">
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm">7</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+<div class="flex items-center justify-center font-grid-number text-grid-number text-primary bg-surface-container-lowest rounded-sm">9</div>
+<div class="flex items-center justify-center font-grid-pencil text-grid-pencil text-outline bg-surface-container-lowest rounded-sm"></div>
+</div>
+</div>
+</div>
+<!-- Softened Utility Icons Row (Frozen Behind Overlay) -->
+<div class="w-full max-w-[360px] flex justify-between items-center mt-4 px-3">
+<div class="flex flex-col items-center gap-1 opacity-40">
+<div class="w-11 h-11 rounded-full bg-surface-container flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">undo</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Undo</span>
+</div>
+<div class="flex flex-col items-center gap-1 opacity-40">
+<div class="w-11 h-11 rounded-full bg-surface-container flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">ink_eraser</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Erase</span>
+</div>
+<div class="flex flex-col items-center gap-1 opacity-40">
+<div class="w-11 h-11 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container">
+<span class="material-symbols-outlined text-[20px]">edit</span>
+</div>
+<span class="font-label-sm text-label-sm text-secondary font-bold">Notes</span>
+</div>
+<div class="flex flex-col items-center gap-1 opacity-40">
+<div class="w-11 h-11 rounded-full bg-surface-container flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">lightbulb</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Hint</span>
+</div>
+</div>
+</div>
+<!-- Warm Frosted Scrim Overlay Layer -->
+<div class="fixed inset-0 z-40 bg-[#16222F]/45 backdrop-blur-md flex items-center justify-center p-margin-mobile">
+<!-- Elevated Editorial Pause Card -->
+<section class="w-full max-w-sm bg-surface rounded-3xl p-6 shadow-2xl flex flex-col relative overflow-hidden transition-all duration-300 transform scale-100">
+<!-- Ambient Card Subtle Accent Glow -->
+<div class="absolute -top-12 -right-12 w-32 h-32 bg-secondary-container/20 rounded-full blur-2xl pointer-events-none"></div>
+<div class="absolute -bottom-10 -left-10 w-28 h-28 bg-primary-fixed/30 rounded-full blur-2xl pointer-events-none"></div>
+<!-- Header: Title & Brass Icon -->
+<div class="flex items-center justify-between relative z-10 mb-4">
+<div class="flex items-center gap-2.5">
+<div class="w-9 h-9 rounded-full bg-secondary-fixed flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-secondary text-[20px]" style="font-variation-settings: 'FILL' 1;">pause_circle</span>
+</div>
+<h2 class="font-headline-md text-headline-md text-primary tracking-tight">Game Paused</h2>
+</div>
+<button aria-label="Quick Close" class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-surface-container-highest transition-colors" onclick="history.back()">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+</div>
+<!-- Game Snapshot Metadata Strip -->
+<div class="relative z-10 w-full bg-surface-container-low rounded-2xl p-3 flex items-center justify-between mb-5 shadow-sm">
+<!-- Difficulty Badge -->
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-container text-on-secondary-container font-label-md text-label-md font-semibold">
+<span class="material-symbols-outlined text-[14px]">auto_graph</span>
+<span>Medium</span>
+</div>
+<!-- Elapsed Time -->
+<div class="flex items-center gap-1.5 text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-secondary">timer</span>
+<span class="font-label-lg text-label-lg font-bold tracking-wide">04:28</span>
+</div>
+<!-- Mistakes Tracker -->
+<div class="flex items-center gap-1 text-on-tertiary-container bg-error-container/60 px-2 py-0.5 rounded-lg">
+<span class="material-symbols-outlined text-[14px] text-error">error</span>
+<span class="font-label-sm text-label-sm font-bold text-error">1/3</span>
+</div>
+</div>
+<!-- Quick Preferences / Focus Controls -->
+<div class="relative z-10 flex flex-col gap-3 mb-6 bg-surface-container-lowest rounded-2xl p-3.5 shadow-sm">
+<div class="flex items-center justify-between pb-1">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant font-bold">Preferences</span>
+<span class="font-label-sm text-label-sm text-secondary flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[12px]">tune</span> Mindful Flow
+          </span>
+</div>
+<!-- Toggle: Sound Effects -->
+<label class="flex items-center justify-between cursor-pointer py-1 group select-none">
+<div class="flex items-center gap-2.5">
+<div class="w-7 h-7 rounded-lg bg-surface-container flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-[16px]">volume_up</span>
+</div>
+<span class="font-body-md text-body-md text-on-surface font-medium">Sound Effects</span>
+</div>
+<div class="relative inline-flex items-center">
+<input checked="" class="sr-only peer" id="toggle-sound" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface-container-lowest after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-container"></div>
+</div>
+</label>
+<!-- Toggle: Haptic Feedback -->
+<label class="flex items-center justify-between cursor-pointer py-1 group select-none">
+<div class="flex items-center gap-2.5">
+<div class="w-7 h-7 rounded-lg bg-surface-container flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-[16px]">vibration</span>
+</div>
+<span class="font-body-md text-body-md text-on-surface font-medium">Haptic Feedback</span>
+</div>
+<div class="relative inline-flex items-center">
+<input checked="" class="sr-only peer" id="toggle-haptics" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface-container-lowest after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-container"></div>
+</div>
+</label>
+<!-- Toggle: Auto-check Mistakes -->
+<label class="flex items-center justify-between cursor-pointer py-1 group select-none">
+<div class="flex items-center gap-2.5">
+<div class="w-7 h-7 rounded-lg bg-surface-container flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-[16px]">rule</span>
+</div>
+<span class="font-body-md text-body-md text-on-surface font-medium">Auto-check Mistakes</span>
+</div>
+<div class="relative inline-flex items-center">
+<input checked="" class="sr-only peer" id="toggle-autocheck" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface-container-lowest after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-container"></div>
+</div>
+</label>
+<!-- Toggle: Highlight Duplicates -->
+<label class="flex items-center justify-between cursor-pointer py-1 group select-none">
+<div class="flex items-center gap-2.5">
+<div class="w-7 h-7 rounded-lg bg-surface-container flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-[16px]">filter_center_focus</span>
+</div>
+<span class="font-body-md text-body-md text-on-surface font-medium">Highlight Duplicates</span>
+</div>
+<div class="relative inline-flex items-center">
+<input checked="" class="sr-only peer" id="toggle-duplicates" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface-container-lowest after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-container"></div>
+</div>
+</label>
+</div>
+<!-- Action Stack -->
+<div class="relative z-10 flex flex-col gap-2.5 w-full">
+<!-- 1. Primary CTA: Resume Game -->
+<button class="w-full bg-primary-container text-on-primary py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg hover:opacity-95 active:scale-[0.98] transition-all" onclick="history.back()">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+<span class="font-label-lg text-label-lg font-semibold tracking-wide">Resume Game</span>
+</button>
+<!-- 2. Secondary CTA: Restart Puzzle -->
+<button class="w-full bg-surface-container-lowest text-primary py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-sm hover:bg-surface-container-low active:scale-[0.98] transition-all">
+<span class="material-symbols-outlined text-[18px]">refresh</span>
+<span class="font-label-md text-label-md font-semibold">Restart Puzzle</span>
+</button>
+<!-- 3. Ghost / Tertiary: Save & Exit to Home -->
+<button class="w-full py-2.5 px-4 rounded-lg flex items-center justify-center gap-1.5 text-on-surface-variant hover:text-primary transition-colors" onclick="history.back()">
+<span class="material-symbols-outlined text-[18px]">home</span>
+<span class="font-body-sm text-body-sm font-medium">Save &amp; Exit to Home</span>
+</button>
+</div>
+<!-- Footer Cloud Sync Guarantee Hint -->
+<div class="relative z-10 mt-4 flex items-center justify-center gap-1.5 text-outline">
+<span class="material-symbols-outlined text-[14px]">cloud_done</span>
+<p class="font-body-sm text-body-sm text-center">Your progress is automatically saved.</p>
+</div>
+</section>
+</div>
+</div>
+<script>
+  // Subtle tactile feedback on preference toggling
+  document.querySelectorAll('input[type="checkbox"]').forEach((switchEl) => {
+    switchEl.addEventListener('change', () => {
+      if (window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate(12);
+      }
+    });
+  });
+</script></main></body></html>

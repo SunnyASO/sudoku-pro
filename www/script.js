@@ -1,4 +1,828 @@
-document.addEventListener('DOMContentLoaded', () => {
+// Canonical AppRuntime Readiness Provider
+window.AppRuntime = {
+    _readyPromise: null,
+    ready() {
+        if (this._readyPromise) return this._readyPromise;
+        this._readyPromise = new Promise((resolve) => {
+            const check = () => {
+                const hasCapacitor = typeof window.Capacitor !== 'undefined';
+                const isNative = hasCapacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform();
+                const platform = hasCapacitor && typeof window.Capacitor.getPlatform === 'function' ? window.Capacitor.getPlatform() : (isNative ? 'android' : 'web');
+                resolve({ isNative, platform });
+            };
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', check, { once: true });
+            } else {
+                check();
+            }
+        });
+        return this._readyPromise;
+    }
+};
+
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log("[Startup] DOMContentLoaded");
+    window.isPremium = false;
+
+    // 1. Audit and verify Capacitor runtime readiness
+    const runtime = await AppRuntime.ready();
+    console.log("[Startup] capacitor_available:", typeof window.Capacitor !== 'undefined');
+    console.log("[Startup] capacitor_platform:", runtime.platform);
+
+    // 2. Register all native local plugins upfront with Capacitor
+    let Analytics = null;
+    let Billing = null;
+    let RemoteConfig = null;
+    let Review = null;
+    let Haptics = null;
+    let InAppUpdate = null;
+
+    if (window.Capacitor && window.Capacitor.registerPlugin) {
+        Analytics = window.Capacitor.registerPlugin('SudokuAnalytics');
+        Billing = window.Capacitor.registerPlugin('Billing');
+        RemoteConfig = window.Capacitor.registerPlugin('RemoteConfig');
+        Review = window.Capacitor.registerPlugin('Review');
+        Haptics = window.Capacitor.registerPlugin('Haptics');
+        InAppUpdate = window.Capacitor.registerPlugin('InAppUpdate');
+        window.Capacitor.registerPlugin('NativeAd');
+        window.Capacitor.registerPlugin('AppOpenAd');
+    } else if (window.Capacitor && window.Capacitor.Plugins) {
+        Analytics = window.Capacitor.Plugins.SudokuAnalytics;
+        Billing = window.Capacitor.Plugins.Billing;
+        RemoteConfig = window.Capacitor.Plugins.RemoteConfig;
+        Review = window.Capacitor.Plugins.Review;
+        Haptics = window.Capacitor.Plugins.Haptics;
+        InAppUpdate = window.Capacitor.Plugins.InAppUpdate;
+    }
+    console.log("[Startup] plugins_available:", !!(window.Capacitor && window.Capacitor.Plugins));
+
+    // Analytics Helper
+    function trackEvent(name, params = {}) {
+        setTimeout(() => {
+            try {
+                console.log("Analytics Event:", name, params);
+                if (Analytics) {
+                    Analytics.logEvent({ name, params }).catch(e => {
+                        console.warn("Analytics non-fatal error:", e);
+                    });
+                }
+            } catch (e) {
+                console.warn("Analytics crash prevented:", e);
+            }
+        }, 50); // non-blocking
+    }
+
+    // ═══════════════════════════════════════════════
+    //  CENTRAL REVIEW PROMPT MANAGER (IN-APP REVIEW)
+    // ═══════════════════════════════════════════════
+
+    const ReviewPromptManager = {
+        STORAGE_KEY: 'sudoku-review-prompt-state',
+        _pendingTrigger: null,
+        _pendingTriggerContext: {},
+        _newAchievementsThisSession: false,
+        _isReviewFlowInProgress: false,
+
+        getState() {
+            try {
+                const raw = localStorage.getItem(this.STORAGE_KEY);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    return {
+                        firstInstallAt: parsed.firstInstallAt || Date.now(),
+                        sessionCount: parsed.sessionCount || 1,
+                        completedPuzzleCount: parsed.completedPuzzleCount || 0,
+                        dailyChallengeCompletionCount: parsed.dailyChallengeCompletionCount || 0,
+                        lastPromptAttemptAt: parsed.lastPromptAttemptAt || 0,
+                        promptAttemptCount: parsed.promptAttemptCount || 0,
+                        reviewFlowCompletedLocally: !!parsed.reviewFlowCompletedLocally,
+                        lastPositiveMilestoneAt: parsed.lastPositiveMilestoneAt || 0
+                    };
+                }
+            } catch (e) {
+                console.warn('[ReviewPromptManager] Error reading state:', e);
+            }
+            return {
+                firstInstallAt: Date.now(),
+                sessionCount: 1,
+                completedPuzzleCount: 0,
+                dailyChallengeCompletionCount: 0,
+                lastPromptAttemptAt: 0,
+                promptAttemptCount: 0,
+                reviewFlowCompletedLocally: false,
+                lastPositiveMilestoneAt: 0
+            };
+        },
+
+        saveState(state) {
+            try {
+                localStorage.setItem(this.STORAGE_KEY, JSON.stringify(state));
+            } catch (e) {
+                console.warn('[ReviewPromptManager] Error saving state:', e);
+            }
+        },
+
+        init() {
+            const state = this.getState();
+            state.sessionCount = (state.sessionCount || 0) + 1;
+            this.saveState(state);
+            console.log(`[ReviewPromptManager] Initialized. Session #${state.sessionCount}, Completed: ${state.completedPuzzleCount}, Attempts: ${state.promptAttemptCount}`);
+        },
+
+        getRemoteConfigValue(key, fallback) {
+            if (typeof AdMobService !== 'undefined' && typeof AdMobService.getRemoteValue === 'function') {
+                return AdMobService.getRemoteValue(key, fallback);
+            }
+            if (typeof AdMobConfig !== 'undefined' && AdMobConfig.REMOTE && AdMobConfig.REMOTE[key] !== undefined) {
+                return AdMobConfig.REMOTE[key];
+            }
+            return fallback;
+        },
+
+        isEligible(trigger = 'generic') {
+            if (typeof window.UpdateManager !== 'undefined' && window.UpdateManager.isMandatoryUpdateActive()) {
+                console.log(`[ReviewPromptManager] Ineligible: mandatory update active`);
+                return false;
+            }
+
+            const isEnabled = this.getRemoteConfigValue('review_prompt_enabled', true);
+            if (!isEnabled) {
+                console.log(`[ReviewPromptManager] Ineligible: review_prompt_enabled=false`);
+                return false;
+            }
+
+            // Never request while an ad is currently displaying
+            if (typeof AdMobService !== 'undefined') {
+                if (typeof AdMobService.isAdShowing === 'function' && AdMobService.isAdShowing()) {
+                    console.log(`[ReviewPromptManager] Ineligible: ad currently showing`);
+                    return false;
+                }
+            }
+
+            const state = this.getState();
+
+            // Safety rule: never on first session / launch
+            const minSessions = Number(this.getRemoteConfigValue('review_min_sessions', 2));
+            if (state.sessionCount < minSessions) {
+                console.log(`[ReviewPromptManager] Ineligible: sessionCount (${state.sessionCount}) < minSessions (${minSessions})`);
+                return false;
+            }
+
+            // Safety rule: minimum completed puzzles
+            const minPuzzles = Number(this.getRemoteConfigValue('review_min_completed_puzzles', 2));
+            if (state.completedPuzzleCount < minPuzzles) {
+                console.log(`[ReviewPromptManager] Ineligible: completedPuzzleCount (${state.completedPuzzleCount}) < minPuzzles (${minPuzzles})`);
+                return false;
+            }
+
+            // Max attempts cap
+            const maxAttempts = Number(this.getRemoteConfigValue('review_max_local_attempts', 5));
+            if (state.promptAttemptCount >= maxAttempts) {
+                console.log(`[ReviewPromptManager] Ineligible: promptAttemptCount (${state.promptAttemptCount}) >= maxAttempts (${maxAttempts})`);
+                return false;
+            }
+
+            // Trigger-specific feature flags
+            if (trigger === 'perfect_solve' && !this.getRemoteConfigValue('review_trigger_perfect_solve', true)) {
+                return false;
+            }
+            if (trigger === 'daily_challenge_completion' && !this.getRemoteConfigValue('review_trigger_daily_challenge', true)) {
+                return false;
+            }
+            if (trigger === 'achievement_unlocked' && !this.getRemoteConfigValue('review_trigger_achievement', true)) {
+                return false;
+            }
+            if (trigger === 'personal_best' && !this.getRemoteConfigValue('review_trigger_personal_best', true)) {
+                return false;
+            }
+
+            // Local cooldown logic
+            const now = Date.now();
+            const lastAttempt = state.lastPromptAttemptAt || 0;
+            const msSinceLast = now - lastAttempt;
+
+            let requiredCooldownDays = 0;
+            if (state.promptAttemptCount === 1) {
+                requiredCooldownDays = Number(this.getRemoteConfigValue('review_first_cooldown_days', 7));
+            } else if (state.promptAttemptCount === 2) {
+                requiredCooldownDays = Number(this.getRemoteConfigValue('review_second_cooldown_days', 21));
+            } else if (state.promptAttemptCount >= 3) {
+                requiredCooldownDays = Number(this.getRemoteConfigValue('review_later_cooldown_days', 45));
+            }
+
+            const requiredCooldownMs = requiredCooldownDays * 24 * 60 * 60 * 1000;
+            if (lastAttempt > 0 && msSinceLast < requiredCooldownMs) {
+                const daysRemaining = ((requiredCooldownMs - msSinceLast) / (86400000)).toFixed(1);
+                console.log(`[ReviewPromptManager] Ineligible: in cooldown (${daysRemaining} days remaining for attempt #${state.promptAttemptCount + 1})`);
+                return false;
+            }
+
+            return true;
+        },
+
+        recordPuzzleCompleted(details = {}) {
+            const state = this.getState();
+            state.completedPuzzleCount++;
+            if (details.isDaily) {
+                state.dailyChallengeCompletionCount++;
+            }
+            state.lastPositiveMilestoneAt = Date.now();
+            this.saveState(state);
+
+            // Determine highest priority trigger (Tier A -> Tier B)
+            if (details.mistakes === 0 && details.hints === 0) {
+                this._pendingTrigger = 'perfect_solve';
+            } else if (details.isNewBest) {
+                this._pendingTrigger = 'personal_best';
+            } else if (details.difficulty === 'hard') {
+                this._pendingTrigger = 'hard_puzzle_completion';
+            } else if (details.isDaily) {
+                this._pendingTrigger = 'daily_challenge_completion';
+            } else if (state.completedPuzzleCount === 3) {
+                this._pendingTrigger = '3rd_puzzle_completed';
+            } else if (state.completedPuzzleCount === 10) {
+                this._pendingTrigger = '10th_puzzle_completed';
+            } else if (details.streak >= 3) {
+                this._pendingTrigger = 'win_streak_milestone';
+            } else {
+                this._pendingTrigger = 'victory_screen_dismissal';
+            }
+
+            this._pendingTriggerContext = {
+                difficulty: details.difficulty,
+                is_daily: !!details.isDaily,
+                mistakes: details.mistakes,
+                hints: details.hints,
+                streak: details.streak
+            };
+
+            console.log(`[ReviewPromptManager] Puzzle completed recorded (#${state.completedPuzzleCount}). Staged trigger: ${this._pendingTrigger}`);
+        },
+
+        recordAchievementUnlocked(achievementTitles) {
+            this._newAchievementsThisSession = true;
+            const state = this.getState();
+            state.lastPositiveMilestoneAt = Date.now();
+            this.saveState(state);
+            this._pendingTrigger = 'achievement_unlocked';
+            this._pendingTriggerContext = { achievements: achievementTitles };
+            console.log(`[ReviewPromptManager] Achievement unlocked staged:`, achievementTitles);
+        },
+
+        async handleVictoryAction() {
+            const trigger = this._pendingTrigger || 'victory_screen_dismissal';
+            this._pendingTrigger = null;
+
+            if (!this.isEligible(trigger)) {
+                return false;
+            }
+
+            return await this.launchReviewFlow(trigger, this._pendingTriggerContext);
+        },
+
+        async triggerIfEligible(trigger, context = {}) {
+            if (!this.isEligible(trigger)) {
+                return false;
+            }
+            return await this.launchReviewFlow(trigger, context);
+        },
+
+        async launchReviewFlow(trigger, context = {}) {
+            if (this._isReviewFlowInProgress) return false;
+            this._isReviewFlowInProgress = true;
+
+            const state = this.getState();
+            const daysSinceLast = state.lastPromptAttemptAt ? Math.round((Date.now() - state.lastPromptAttemptAt) / 86400000) : -1;
+
+            const analyticsParams = {
+                trigger: trigger,
+                completed_puzzles: state.completedPuzzleCount,
+                session_count: state.sessionCount,
+                days_since_last_attempt: daysSinceLast
+            };
+
+            trackEvent('review_eligible', analyticsParams);
+            trackEvent('review_request_started', analyticsParams);
+
+            state.promptAttemptCount++;
+            state.lastPromptAttemptAt = Date.now();
+            state.reviewFlowCompletedLocally = true;
+            this.saveState(state);
+
+            console.log(`[ReviewPromptManager] Launching In-App Review request. Attempt #${state.promptAttemptCount}, Trigger: ${trigger}`);
+
+            let reviewAttempted = false;
+            try {
+                if (Review && typeof Review.requestReview === 'function') {
+                    // Impose a 5-second timeout so app navigation is never blocked
+                    const reviewPromise = Review.requestReview();
+                    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve({ success: false, status: 'timeout' }), 5000));
+                    const res = await Promise.race([reviewPromise, timeoutPromise]);
+
+                    console.log('[ReviewPromptManager] Native review result:', res);
+                    if (res && res.success) {
+                        reviewAttempted = true;
+                        trackEvent('review_request_completed', {
+                            trigger: trigger,
+                            completed_puzzles: state.completedPuzzleCount,
+                            session_count: state.sessionCount,
+                            status: res.status || 'success'
+                        });
+                    } else {
+                        trackEvent('review_request_failed', {
+                            trigger: trigger,
+                            completed_puzzles: state.completedPuzzleCount,
+                            session_count: state.sessionCount,
+                            error: (res && res.error) || (res && res.status) || 'failed'
+                        });
+                    }
+                } else {
+                    console.log('[ReviewPromptManager] Review native plugin not available in this environment');
+                    trackEvent('review_request_completed', {
+                        trigger: trigger,
+                        completed_puzzles: state.completedPuzzleCount,
+                        session_count: state.sessionCount,
+                        status: 'web_simulated'
+                    });
+                }
+            } catch (err) {
+                console.warn('[ReviewPromptManager] Non-fatal review launch error:', err);
+                trackEvent('review_request_failed', {
+                    trigger: trigger,
+                    completed_puzzles: state.completedPuzzleCount,
+                    session_count: state.sessionCount,
+                    error: String(err)
+                });
+            } finally {
+                this._isReviewFlowInProgress = false;
+            }
+
+            return reviewAttempted;
+        },
+
+        openManualStoreRating(source = 'settings') {
+            trackEvent('review_manual_store_opened', { source });
+            const marketUri = 'market://details?id=com.appsedifice.sudokupro.logicpuzzle';
+            const httpsUri = 'https://play.google.com/store/apps/details?id=com.appsedifice.sudokupro.logicpuzzle';
+
+            try {
+                window.location.href = marketUri;
+                setTimeout(() => {
+                    if (document.visibilityState === 'visible') {
+                        window.open(httpsUri, '_blank');
+                    }
+                }, 1200);
+            } catch (e) {
+                window.open(httpsUri, '_blank');
+            }
+        },
+
+        async openManualShare() {
+            const shareText = "I'm enjoying Sudoku Pro! A clean, mindful logic puzzle experience for Android: https://play.google.com/store/apps/details?id=com.appsedifice.sudokupro.logicpuzzle";
+            trackEvent('share_app_tapped', { source: 'settings' });
+
+            try {
+                if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share) {
+                    await window.Capacitor.Plugins.Share.share({
+                        title: 'Sudoku Pro',
+                        text: shareText,
+                        dialogTitle: 'Share Sudoku Pro'
+                    });
+                } else if (navigator.share) {
+                    await navigator.share({
+                        title: 'Sudoku Pro',
+                        text: shareText
+                    });
+                } else {
+                    window.open('https://play.google.com/store/apps/details?id=com.appsedifice.sudokupro.logicpuzzle', '_blank');
+                }
+            } catch (e) {
+                console.log('[ReviewPromptManager] Share cancelled or failed:', e);
+            }
+        }
+    };
+
+    ReviewPromptManager.init();
+
+    // ═══════════════════════════════════════════════
+    //  GOOGLE PLAY IN-APP UPDATE MANAGER
+    // ═══════════════════════════════════════════════
+
+    const UpdateManager = {
+        _isMandatoryActive: false,
+        _flexibleUpdateAvailable: false,
+        _flexibleDownloadComplete: false,
+        _installedVersionCode: 20,
+        _availableVersionCode: 20,
+        _isCheckInProgress: false,
+        _dismissedThisSession: false,
+        _listenersSetup: false,
+
+        isMandatoryUpdateActive() {
+            return this._isMandatoryActive;
+        },
+
+        getRemoteConfigValue(key, fallback) {
+            if (typeof AdMobService !== 'undefined' && typeof AdMobService.getRemoteValue === 'function') {
+                return AdMobService.getRemoteValue(key, fallback);
+            }
+            if (typeof AdMobConfig !== 'undefined' && AdMobConfig.REMOTE && AdMobConfig.REMOTE[key] !== undefined) {
+                return AdMobConfig.REMOTE[key];
+            }
+            return fallback;
+        },
+
+        async checkStartupUpdate() {
+            if (this._isCheckInProgress) return { isMandatory: this._isMandatoryActive, isFlexible: false };
+            this._isCheckInProgress = true;
+
+            console.log("[Update] check_started");
+
+            const updateEnabled = this.getRemoteConfigValue('app_update_enabled', true);
+            if (!updateEnabled) {
+                console.log("[Update] Skipped: app_update_enabled is false");
+                this._isCheckInProgress = false;
+                return { isMandatory: false, isFlexible: false };
+            }
+
+            if (!InAppUpdate || typeof InAppUpdate.checkForUpdate !== 'function') {
+                console.log("[Update] InAppUpdate plugin not available");
+                this._isCheckInProgress = false;
+                return { isMandatory: false, isFlexible: false };
+            }
+
+            try {
+                const info = await InAppUpdate.checkForUpdate();
+                this._installedVersionCode = Number(info.installedVersionCode || 20);
+                this._availableVersionCode = Number(info.availableVersionCode || this._installedVersionCode);
+
+                console.log(`[Update] installed_version: ${this._installedVersionCode}`);
+                console.log(`[Update] available_version: ${this._availableVersionCode}`);
+                console.log(`[Update] update_available: ${!!info.updateAvailable}`);
+                console.log(`[Update] immediate_allowed: ${!!info.immediateAllowed}`);
+                console.log(`[Update] flexible_allowed: ${!!info.flexibleAllowed}`);
+
+                if (info.updateAvailable || info.updateInProgress) {
+                    trackEvent('app_update_available', {
+                        installed_version: this._installedVersionCode,
+                        available_version: this._availableVersionCode,
+                        update_priority: info.updatePriority || 0,
+                        immediate_allowed: !!info.immediateAllowed,
+                        flexible_allowed: !!info.flexibleAllowed
+                    });
+
+                    const minSupportedVersion = Number(this.getRemoteConfigValue('minimum_supported_version_code', 19));
+                    const forceUpdateBelow = Number(this.getRemoteConfigValue('force_update_below_version_code', 19));
+                    const flexibleUpdateBelow = Number(this.getRemoteConfigValue('flexible_update_below_version_code', 20));
+
+                    const isImmediateRequired = (
+                        this._installedVersionCode < forceUpdateBelow ||
+                        this._installedVersionCode < minSupportedVersion ||
+                        (info.updatePriority >= 4 && info.immediateAllowed)
+                    );
+
+                    if (isImmediateRequired && (info.immediateAllowed || info.updateInProgress)) {
+                        console.log("[Update] immediate_required: true");
+                        this._isMandatoryActive = true;
+                        this.presentMandatoryUpdateUI();
+                        this._isCheckInProgress = false;
+                        return { isMandatory: true, isFlexible: false, info };
+                    }
+
+                    const isFlexibleEligible = (
+                        this._installedVersionCode < flexibleUpdateBelow &&
+                        info.flexibleAllowed &&
+                        !this._dismissedThisSession
+                    );
+
+                    if (isFlexibleEligible) {
+                        console.log("[Update] flexible_eligible: true");
+                        this._flexibleUpdateAvailable = true;
+                        this._setupFlexibleListeners();
+                        this.presentFlexibleBanner(info);
+                        this._isCheckInProgress = false;
+                        return { isMandatory: false, isFlexible: true, info };
+                    }
+                } else {
+                    console.log("[Update] No update required or available.");
+                }
+            } catch (e) {
+                console.warn("[Update] Exception checking for update:", e);
+            }
+
+            this._isCheckInProgress = false;
+            return { isMandatory: false, isFlexible: false };
+        },
+
+        presentMandatoryUpdateUI() {
+            const modal = document.getElementById('mandatory-update-modal');
+            const updateBtn = document.getElementById('mandatory-update-btn');
+            const statusNote = document.getElementById('mandatory-update-status');
+
+            if (modal) {
+                modal.classList.remove('hidden');
+            }
+
+            // Suppress ads immediately
+            if (typeof AdMobService !== 'undefined') {
+                AdMobService.logAdState("mandatory_update_active");
+                if (typeof AdMobService.hideNativeAd === 'function') {
+                    AdMobService.hideNativeAd();
+                }
+            }
+
+            if (updateBtn) {
+                updateBtn.onclick = () => {
+                    this.startImmediateFlow();
+                };
+            }
+
+            // Listen for immediate result
+            this._setupFlexibleListeners();
+
+            // Auto-launch Google Play immediate flow
+            this.startImmediateFlow();
+        },
+
+        async startImmediateFlow() {
+            console.log("[Update] immediate_started");
+            trackEvent('app_update_started', {
+                type: 'immediate',
+                installed_version: this._installedVersionCode,
+                available_version: this._availableVersionCode
+            });
+
+            const statusNote = document.getElementById('mandatory-update-status');
+            if (statusNote) {
+                statusNote.classList.remove('hidden');
+                statusNote.textContent = "Connecting to Google Play...";
+            }
+
+            try {
+                if (InAppUpdate && typeof InAppUpdate.startImmediateUpdate === 'function') {
+                    const res = await InAppUpdate.startImmediateUpdate();
+                    if (!res || !res.success) {
+                        console.warn("[Update] failed to start immediate update:", res);
+                        if (statusNote) {
+                            statusNote.textContent = "Update flow could not be started. Tap below to retry.";
+                        }
+                        trackEvent('app_update_failed', { type: 'immediate', status: res ? res.status : 'null' });
+                    }
+                }
+            } catch (e) {
+                console.error("[Update] Exception starting immediate update:", e);
+                if (statusNote) {
+                    statusNote.textContent = "Update error. Tap to retry.";
+                }
+                trackEvent('app_update_failed', { type: 'immediate', error: e.message });
+            }
+        },
+
+        _setupFlexibleListeners() {
+            if (this._listenersSetup) return;
+            if (!InAppUpdate || typeof InAppUpdate.addListener !== 'function') return;
+            this._listenersSetup = true;
+
+            InAppUpdate.addListener('onFlexibleUpdateStateChange', (event) => {
+                console.log("[Update] onFlexibleUpdateStateChange:", event);
+                if (event.status === 'DOWNLOADING') {
+                    const pct = event.totalBytesToDownload > 0
+                        ? Math.round((event.bytesDownloaded / event.totalBytesToDownload) * 100)
+                        : 0;
+                    this.updateFlexibleBannerProgress(pct);
+                } else if (event.status === 'DOWNLOADED') {
+                    console.log("[Update] downloaded");
+                    this._flexibleDownloadComplete = true;
+                    this.showFlexibleReadyBanner();
+                    trackEvent('app_update_completed', { type: 'flexible_downloaded' });
+                } else if (event.status === 'FAILED') {
+                    console.warn("[Update] flexible download failed");
+                    trackEvent('app_update_failed', { type: 'flexible_download' });
+                }
+            });
+
+            InAppUpdate.addListener('onImmediateUpdateResult', (res) => {
+                console.log("[Update] onImmediateUpdateResult:", res);
+                const statusNote = document.getElementById('mandatory-update-status');
+                if (res.resultCode === 0) { // Activity.RESULT_CANCELED
+                    console.log("[Update] cancelled");
+                    trackEvent('app_update_cancelled', { type: 'immediate' });
+                    if (statusNote) {
+                        statusNote.classList.remove('hidden');
+                        statusNote.textContent = "Update required to continue. Tap to retry.";
+                    }
+                } else if (res.resultCode === -1) { // Activity.RESULT_OK
+                    console.log("[Update] completed");
+                    trackEvent('app_update_completed', { type: 'immediate' });
+                } else {
+                    console.warn("[Update] failed resultCode=" + res.resultCode);
+                    trackEvent('app_update_failed', { type: 'immediate', resultCode: res.resultCode });
+                    if (statusNote) {
+                        statusNote.classList.remove('hidden');
+                        statusNote.textContent = "Update failed. Tap to retry.";
+                    }
+                }
+            });
+        },
+
+        presentFlexibleBanner(info) {
+            const banner = document.getElementById('home-update-banner');
+            const titleEl = document.getElementById('update-banner-title');
+            const descEl = document.getElementById('update-banner-desc');
+            const actionBtn = document.getElementById('home-update-action-btn');
+            const laterBtn = document.getElementById('home-update-later-btn');
+
+            if (!banner) return;
+            banner.classList.remove('hidden');
+
+            if (titleEl) titleEl.textContent = "Update Available";
+            if (descEl) descEl.textContent = `A newer edition (v${this._availableVersionCode}) is ready on Google Play.`;
+
+            if (actionBtn) {
+                actionBtn.textContent = "Update";
+                actionBtn.onclick = async () => {
+                    console.log("[Update] flexible_started");
+                    trackEvent('app_update_started', {
+                        type: 'flexible',
+                        installed_version: this._installedVersionCode,
+                        available_version: this._availableVersionCode
+                    });
+                    actionBtn.disabled = true;
+                    actionBtn.textContent = "Downloading...";
+                    try {
+                        await InAppUpdate.startFlexibleUpdate();
+                    } catch (e) {
+                        console.error("[Update] Failed starting flexible update:", e);
+                        actionBtn.disabled = false;
+                        actionBtn.textContent = "Update";
+                    }
+                };
+            }
+
+            if (laterBtn) {
+                laterBtn.onclick = () => {
+                    banner.classList.add('hidden');
+                    this._dismissedThisSession = true;
+                    console.log("[Update] flexible dismissed for this session");
+                    trackEvent('app_update_cancelled', { type: 'flexible_dismissed' });
+                };
+            }
+        },
+
+        updateFlexibleBannerProgress(pct) {
+            const descEl = document.getElementById('update-banner-desc');
+            const actionBtn = document.getElementById('home-update-action-btn');
+            if (descEl) descEl.textContent = `Downloading update: ${pct}%`;
+            if (actionBtn) actionBtn.textContent = `${pct}%`;
+        },
+
+        showFlexibleReadyBanner() {
+            const banner = document.getElementById('home-update-banner');
+            const titleEl = document.getElementById('update-banner-title');
+            const descEl = document.getElementById('update-banner-desc');
+            const actionBtn = document.getElementById('home-update-action-btn');
+            const laterBtn = document.getElementById('home-update-later-btn');
+
+            if (!banner) return;
+            banner.classList.remove('hidden');
+
+            if (titleEl) titleEl.textContent = "Update Ready";
+            if (descEl) descEl.textContent = "Download complete. Restart to apply update.";
+            if (laterBtn) laterBtn.classList.add('hidden');
+
+            if (actionBtn) {
+                actionBtn.disabled = false;
+                actionBtn.textContent = "Restart Now";
+                actionBtn.onclick = async () => {
+                    console.log("[Update] completeFlexibleUpdate requested");
+                    try {
+                        await InAppUpdate.completeFlexibleUpdate();
+                    } catch (e) {
+                        console.error("[Update] Exception completing flexible update:", e);
+                    }
+                };
+            }
+        }
+    };
+
+    window.UpdateManager = UpdateManager;
+
+    // ═══════════════════════════════════════════════
+    //  BILLING & REMOTE CONFIG INITIALIZATION
+    // ═══════════════════════════════════════════════
+    const initBillingPromise = (async () => {
+        if (!Billing) return false;
+        if (UpdateManager.isMandatoryUpdateActive()) return false;
+        try {
+            await Billing.initialize();
+            const res = await Billing.isRemoveAdsPurchased();
+            const isPurchased = !!(res && res.isPurchased);
+            console.log("Billing result isPurchased:", isPurchased);
+            window.isPremium = isPurchased;
+            if (typeof AdMobService !== 'undefined') {
+                AdMobService.setPremium(isPurchased);
+            }
+            if (settingsAdsBtn) {
+                settingsAdsBtn.textContent = isPurchased ? 'Ads Removed' : 'Remove Ads';
+            }
+            if (isPurchased) {
+                trackEvent('remove_ads_active');
+            }
+            return isPurchased;
+        } catch (e) {
+            console.warn("Billing init error", e);
+            return false;
+        }
+    })();
+
+    if (Billing && Billing.addListener) {
+        Billing.addListener("purchaseSuccessful", () => {
+            console.log("Purchase successful event received");
+            window.isPremium = true;
+            if (typeof AdMobService !== 'undefined') AdMobService.setPremium(true);
+            if (settingsAdsBtn) {
+                settingsAdsBtn.textContent = 'Ads Removed';
+            }
+            trackEvent('remove_ads_purchased');
+            alert("Thank you! Ads have been removed.");
+        });
+    }
+
+    const initRemoteConfigPromise = (async () => {
+        if (!RemoteConfig) return null;
+        try {
+            console.log("[RemoteConfig] Fetching and activating remote configuration...");
+            const result = await RemoteConfig.fetchAndActivate();
+            console.log("[RemoteConfig] Fetch result:", result);
+            if (result && result.values && typeof AdMobConfig !== 'undefined') {
+                AdMobConfig.applyRemoteConfig(result.values);
+            }
+            return result;
+        } catch (err) {
+            console.warn("[RemoteConfig] Non-fatal fetch error (using defaults):", err);
+            return null;
+        }
+    })();
+
+    // Await billing and remote config before requesting ads
+    await Promise.allSettled([initBillingPromise, initRemoteConfigPromise]);
+    console.log(`[Startup] billing_ready (isPremium=${window.isPremium})`);
+    console.log("[Startup] remote_config_ready");
+
+    // ═══════════════════════════════════════════════
+    //  ADMOB SDK INITIALIZATION & APP OPEN PRELOAD
+    // ═══════════════════════════════════════════════
+    console.log("[Startup] admob_initialize_start");
+    if (typeof AdMobService !== 'undefined') {
+        try {
+            await AdMobService.initialize();
+            console.log("[Startup] admob_initialize_complete");
+        } catch (err) {
+            console.warn("[Startup] AdMob init error:", err);
+        }
+
+        // Every true app launch attempts to preload App Open ad when eligible
+        if (!window.isPremium && AdMobService.isFeatureEnabled('app_open_ads_enabled')) {
+            console.log("[AppOpen] launch_detected");
+            console.log("[AppOpen] preload_started");
+            await AdMobService.initAppOpenAd();
+        }
+    }
+
+    function showToast(message) {
+        let toast = document.getElementById('sudoku-global-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'sudoku-global-toast';
+            toast.style.position = 'fixed';
+            toast.style.bottom = '80px';
+            toast.style.left = '50%';
+            toast.style.transform = 'translateX(-50%)';
+            toast.style.backgroundColor = 'var(--st-primary, #010B17)';
+            toast.style.color = 'var(--st-on-primary, #FFFFFF)';
+            toast.style.padding = '10px 18px';
+            toast.style.borderRadius = '24px';
+            toast.style.fontSize = '13px';
+            toast.style.fontFamily = "'Plus Jakarta Sans', sans-serif";
+            toast.style.fontWeight = '600';
+            toast.style.boxShadow = '0 6px 20px rgba(1, 11, 23, 0.35)';
+            toast.style.zIndex = '10001';
+            toast.style.pointerEvents = 'none';
+            toast.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+            toast.style.opacity = '0';
+            document.body.appendChild(toast);
+        }
+        toast.textContent = message;
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateX(-50%) translateY(0)';
+        clearTimeout(toast._timeout);
+        toast._timeout = setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateX(-50%) translateY(10px)';
+        }, 3000);
+    }
+
     // ═══════════════════════════════════════════════
     //  VIEW SWITCHING
     // ═══════════════════════════════════════════════
@@ -10,10 +834,35 @@ document.addEventListener('DOMContentLoaded', () => {
         if (viewName === 'home') {
             homeScreen.classList.remove('hidden-view');
             gameScreen.classList.add('hidden-view');
+            gameScreen.classList.remove('has-native-ad');
             updateContinueButton();
+            if (typeof AdMobService !== 'undefined') {
+                AdMobService.setGameplayActive(false);
+                AdMobService.hideGameplayBannerAd();
+                AdMobService.showNativeAd('home').then(success => {
+                    if (success) {
+                        homeScreen.classList.add('has-native-ad');
+                    } else {
+                        homeScreen.classList.remove('has-native-ad');
+                    }
+                }).catch(() => {
+                    homeScreen.classList.remove('has-native-ad');
+                });
+            } else {
+                homeScreen.classList.remove('has-native-ad');
+            }
         } else if (viewName === 'game') {
             homeScreen.classList.add('hidden-view');
+            homeScreen.classList.remove('has-native-ad');
             gameScreen.classList.remove('hidden-view');
+            if (typeof AdMobService !== 'undefined') {
+                AdMobService.hideHomeBannerAd();
+                AdMobService.hideNativeAd();
+                AdMobService.setGameplayActive(true);
+                if (!window.isPremium) {
+                    AdMobService.showGameplayAd();
+                }
+            }
         }
     }
 
@@ -43,6 +892,8 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedDifficulty = chip.dataset.difficulty;
             localStorage.setItem('sudoku-difficulty', selectedDifficulty);
             updateDifficultyUI();
+            if (typeof HapticEngine !== 'undefined') HapticEngine.selection();
+            trackEvent('difficulty_selected', { difficulty: selectedDifficulty });
         });
     });
 
@@ -53,6 +904,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // ═══════════════════════════════════════════════
 
     let isDailyChallenge = false;   // true when playing today's daily puzzle
+    let activeDailyChallengeDateKey = null; // tracks date string of active daily challenge
+    let isGameOverNavigationInProgress = false; // prevents double taps on game over actions
     let hintsUsedThisGame = 0;      // track for No-Help achievement
     let mistakesThisGame = 0;       // track for Perfect Solve achievement
 
@@ -229,6 +1082,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         },
 
+        getStreak() {
+            this.computeStats();
+            const eCur = document.getElementById('cal-streak-current');
+            return eCur ? parseInt(eCur.textContent, 10) || 0 : 0;
+        },
+
         renderCalendar(year, month) {
             const grid = document.getElementById('cal-grid');
             const header = document.getElementById('cal-month-year');
@@ -254,7 +1113,8 @@ document.addEventListener('DOMContentLoaded', () => {
             for (let day = 1; day <= daysInMonth; day++) {
                 const cell = document.createElement('div');
                 cell.className = 'cal-day';
-                cell.textContent = day;
+                cell.setAttribute('role', 'button');
+                cell.setAttribute('tabindex', '0');
 
                 const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                 
@@ -276,9 +1136,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     cell.classList.add('cal-selected');
                 }
 
+                let iconHtml = '';
+                if (isCompleted) {
+                    iconHtml = '<span class="material-symbols-outlined cal-day-icon">verified</span>';
+                } else if (isToday) {
+                    iconHtml = '<span class="material-symbols-outlined cal-day-icon">play_circle</span>';
+                } else if (isFuture) {
+                    iconHtml = '<span class="material-symbols-outlined cal-day-icon">lock</span>';
+                }
+
+                cell.innerHTML = `<span class="cal-day-num">${day}</span>${iconHtml}`;
+
                 cell.addEventListener('click', () => {
                     this.selectedDateKey = dateStr;
                     this.renderCalendar(year, month);
+                    const actionCard = document.querySelector('.cal-action-card');
+                    if (actionCard) {
+                        actionCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
                 });
 
                 grid.appendChild(cell);
@@ -311,21 +1186,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const isFuture = selDate > now;
 
             if (isFuture) {
-                statusLabel.textContent = `${formatted}: Locked`;
+                statusLabel.textContent = `${formatted} • Locked`;
                 playBtn.disabled = true;
-                playBtn.textContent = "Locked";
+                playBtn.innerHTML = '<span class="material-symbols-outlined">lock</span><span>Locked</span>';
             } else if (isCompleted) {
-                statusLabel.textContent = `${formatted}: ✅ Completed`;
+                statusLabel.textContent = `${formatted} • Completed`;
                 playBtn.disabled = false;
-                playBtn.textContent = "Play Again";
+                playBtn.innerHTML = '<span class="material-symbols-outlined">replay</span><span>Play Again</span>';
             } else if (isToday) {
-                statusLabel.textContent = `${formatted}: Today's Challenge`;
+                statusLabel.textContent = `${formatted} • Today's Challenge`;
                 playBtn.disabled = false;
-                playBtn.textContent = "Play Today";
+                playBtn.innerHTML = '<span class="material-symbols-outlined">play_arrow</span><span>Play Now</span>';
             } else {
-                statusLabel.textContent = `${formatted}: Missed`;
-                playBtn.disabled = true;
-                playBtn.textContent = "Cannot Play Yet";
+                statusLabel.textContent = `${formatted} • Past Challenge`;
+                playBtn.disabled = false;
+                playBtn.innerHTML = '<span class="material-symbols-outlined">play_arrow</span><span>Play Now</span>';
             }
         },
 
@@ -451,6 +1326,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (newUnlocks.length > 0) {
                 this.saveUnlocked(unlocked);
+                if (typeof ReviewPromptManager !== 'undefined') {
+                    ReviewPromptManager.recordAchievementUnlocked(newUnlocks);
+                }
             }
         },
 
@@ -464,22 +1342,118 @@ document.addEventListener('DOMContentLoaded', () => {
             const daily = { anyCompleted: anyDailyKey };
             const unlocked = this.getUnlocked();
 
+            // Calculate overall progress summary
+            const totalCount = this.definitions.length;
+            let unlockedCount = 0;
+            this.definitions.forEach(def => {
+                if (unlocked[def.id]) unlockedCount++;
+            });
+
+            const pct = totalCount > 0 ? Math.round((unlockedCount / totalCount) * 100) : 0;
+            const summaryPct = document.getElementById('achieve-summary-pct');
+            const summaryCount = document.getElementById('achieve-summary-count');
+            const progressFill = document.getElementById('achieve-progress-fill');
+
+            if (summaryPct) summaryPct.textContent = `${pct}%`;
+            if (summaryCount) summaryCount.textContent = `${unlockedCount} of ${totalCount} Completed`;
+            if (progressFill) progressFill.style.width = `${pct}%`;
+
+            // Material Symbols map for canonical achievements
+            const symbolMap = {
+                'first-win': 'workspace_premium',
+                'beginner': 'potted_plant',
+                'solver': 'extension',
+                'perfect': 'auto_awesome',
+                'no-hints': 'lightbulb',
+                'daily-solver': 'calendar_today'
+            };
+
             list.innerHTML = '';
             this.definitions.forEach(def => {
                 const isUnlocked = !!unlocked[def.id];
-                const item = document.createElement('div');
-                item.className = `achievement-item${isUnlocked ? '' : ' locked'}`;
+                const symbol = symbolMap[def.id] || 'military_tech';
+                
+                // Determine in-progress state for incremental achievements
+                let isInProgress = false;
+                let currentVal = 0;
+                let maxVal = 1;
+                let fractionText = '';
 
-                const progressStr = (!isUnlocked && def.progress) ? def.progress(stats) : '';
+                if (def.progress) {
+                    fractionText = def.progress(stats);
+                    const parts = fractionText.split('/').map(p => parseInt(p.trim(), 10));
+                    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                        currentVal = parts[0];
+                        maxVal = parts[1];
+                        if (!isUnlocked && currentVal > 0) {
+                            isInProgress = true;
+                        }
+                    }
+                }
+
+                const item = document.createElement('article');
+                let stateClass = 'locked';
+                if (isUnlocked) {
+                    stateClass = 'completed';
+                } else if (isInProgress) {
+                    stateClass = 'in-progress';
+                }
+                item.className = `achievement-card ${stateClass}`;
+
+                // Status Badge markup
+                let statusBadgeHtml = '';
+                if (isUnlocked) {
+                    statusBadgeHtml = `
+                        <span class="achieve-card-status-badge completed">
+                            <span class="material-symbols-outlined">check_circle</span>
+                            <span>Completed</span>
+                        </span>
+                    `;
+                } else if (isInProgress) {
+                    statusBadgeHtml = `
+                        <span class="achieve-card-status-badge in-progress">
+                            <span>In Progress</span>
+                        </span>
+                    `;
+                } else {
+                    statusBadgeHtml = `
+                        <span class="achieve-card-status-badge locked">
+                            <span class="material-symbols-outlined">lock</span>
+                            <span>Locked</span>
+                        </span>
+                    `;
+                }
+
+                // Progress Bar or text indicator markup
+                let footerHtml = '';
+                if (isUnlocked) {
+                    footerHtml = `<div class="achieve-card-footer"><span class="achieve-fraction-text">${fractionText || 'Mastered'}</span></div>`;
+                } else if (isInProgress) {
+                    const fillPct = Math.min(100, Math.round((currentVal / maxVal) * 100));
+                    footerHtml = `
+                        <div class="achieve-card-progress-bar-wrap">
+                            <div class="achieve-card-track">
+                                <div class="achieve-card-fill" style="width: ${fillPct}%;"></div>
+                            </div>
+                            <span class="achieve-fraction-text in-progress-fraction">${fractionText}</span>
+                        </div>
+                    `;
+                } else {
+                    footerHtml = `<div class="achieve-card-footer"><span class="achieve-fraction-text">${fractionText || '0 / 1'}</span></div>`;
+                }
 
                 item.innerHTML = `
-                    <div class="achievement-icon">${def.icon}</div>
-                    <div class="achievement-info">
-                        <div class="achievement-title">${def.title}</div>
-                        <div class="achievement-desc">${def.desc}</div>
-                        ${progressStr ? `<div class="achievement-progress">${progressStr}</div>` : ''}
+                    <div class="achieve-card-icon-wrap ${stateClass}">
+                        <span class="material-symbols-outlined">${symbol}</span>
                     </div>
-                    <div class="achievement-check">${isUnlocked ? '✓' : ''}</div>
+                    <div class="achieve-card-body">
+                        <div class="achieve-card-top-row">
+                            <h4 class="achieve-card-title">${def.title}</h4>
+                            ${statusBadgeHtml}
+                        </div>
+                        <p class="achieve-card-desc">${def.desc}</p>
+                        ${footerHtml}
+                    </div>
                 `;
                 list.appendChild(item);
             });
@@ -503,6 +1477,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const eraseBtn = document.getElementById('erase-btn');
     const hintBtn = document.getElementById('hint-btn');
     const hintCountSpan = document.getElementById('hint-count');
+    const autoCheckBtn = document.getElementById('auto-check-btn');
+    const autoCheckBadge = document.getElementById('auto-check-badge');
+    let autoCheckUsedThisPuzzle = 0;
+    let autoCheckClearTimeoutId = null;
     const numpad = document.getElementById('numpad');
     const timerDisplay = document.getElementById('timer');
     const mistakesDisplay = document.getElementById('mistakes');
@@ -537,10 +1515,15 @@ let rewardAdModalResolve = null;
     
     // Tutorial UI (Text modal)
     const tutorialModal = document.getElementById('tutorial-modal');
+    const tutorialVisual = document.getElementById('tutorial-visual');
+    const tutorialStepTitle = document.getElementById('tutorial-step-title');
     const tutorialText = document.getElementById('tutorial-text');
+    const tutorialDotsWrap = document.getElementById('tutorial-dots-wrap');
     const tutorialStepIndicator = document.getElementById('tutorial-step-indicator');
     const tutorialNextBtn = document.getElementById('tutorial-next-btn');
     const tutorialSkipBtn = document.getElementById('tutorial-skip-btn');
+    const tutorialBackBtn = document.getElementById('tutorial-back-btn');
+    const tutorialCloseBtn = document.getElementById('tutorial-close-btn');
     
     const muteBtn = document.getElementById('mute-btn');
     const settingsBtn = document.getElementById('settings-btn');
@@ -558,6 +1541,7 @@ let rewardAdModalResolve = null;
     const victoryShareBtn = document.getElementById('victory-share-btn');
     const victoryHomeBtn = document.getElementById('victory-home-btn');
     const victoryBonusBtn = document.getElementById('victory-bonus-btn');
+    const victoryCloseBtn = document.getElementById('victory-close-btn');
     let completedPuzzleSnapshot = null;
     let bonusRewardClaimedForCurrentVictory = false;
 let completionNavigationCountThisSession = 0;
@@ -579,6 +1563,10 @@ const pencilBtn = document.getElementById('pencil-btn');
     const pauseModal = document.getElementById('pause-modal');
     const pauseResumeBtn = document.getElementById('pause-resume-btn');
     const pauseHomeBtn = document.getElementById('pause-home-btn');
+    const pauseCloseBtn = document.getElementById('pause-close-btn');
+    const pauseDiffText = document.getElementById('pause-diff-text');
+    const pauseTimerText = document.getElementById('pause-timer-text');
+    const pauseMistakesText = document.getElementById('pause-mistakes-text');
 
     // Placeholder modal
     const placeholderModal = document.getElementById('placeholder-modal');
@@ -591,7 +1579,7 @@ const pencilBtn = document.getElementById('pencil-btn');
     let solvedGrid = [];
     let undoStack = [];
     const MAX_UNDOS = 3;
-    const MAX_HINTS = 3;
+    const MAX_HINTS = (typeof AdMobConfig !== 'undefined' && AdMobConfig.STARTING_HINTS != null) ? AdMobConfig.STARTING_HINTS : 3;
     
     // Confetti instance setup
     const confettiCanvas = document.getElementById('confetti-canvas');
@@ -615,21 +1603,61 @@ let isMistakeRescueRequestInProgress = false;
 
     let isPaused = false;
 
+    function updatePauseBtnUI(paused) {
+        if (!gamePauseBtn) return;
+        gamePauseBtn.innerHTML = `<span class="material-symbols-outlined">${paused ? 'play_arrow' : 'pause'}</span>`;
+        gamePauseBtn.setAttribute('title', paused ? 'Resume Game' : 'Pause Game');
+    }
+
     function pauseGame() {
         if (isPaused) return;
         isPaused = true;
         stopTimer();
         gameScreen.classList.add('paused');
-        if (gamePauseBtn) gamePauseBtn.textContent = '▶';
-        if (pauseModal) pauseModal.classList.remove('hidden');
+        updatePauseBtnUI(true);
+
+        if (pauseDiffText) {
+            pauseDiffText.textContent = isDailyChallenge ? 'Daily' : (selectedDifficulty.charAt(0).toUpperCase() + selectedDifficulty.slice(1));
+        }
+        if (pauseTimerText && timerDisplay) {
+            pauseTimerText.textContent = timerDisplay.textContent;
+        }
+        if (pauseMistakesText) {
+            pauseMistakesText.textContent = `${mistakes}/${MAX_MISTAKES}`;
+        }
+
+        const isNativePauseEligible = !window.isPremium && typeof AdMobService !== 'undefined' && AdMobService.isFeatureEnabled('pause_native_ad_enabled');
+        if (pauseModal) {
+            if (isNativePauseEligible) {
+                pauseModal.classList.add('has-native-ad');
+            } else {
+                pauseModal.classList.remove('has-native-ad');
+            }
+            pauseModal.classList.remove('hidden');
+        }
+
+        if (typeof AdMobService !== 'undefined') {
+            AdMobService.showNativeAd('pause');
+        }
     }
 
     function resumeGame() {
         if (!isPaused) return;
         isPaused = false;
         gameScreen.classList.remove('paused');
-        if (gamePauseBtn) gamePauseBtn.textContent = '⏸';
-        if (pauseModal) pauseModal.classList.add('hidden');
+        updatePauseBtnUI(false);
+        if (pauseModal) {
+            pauseModal.classList.remove('has-native-ad');
+            pauseModal.classList.add('hidden');
+        }
+
+        if (typeof AdMobService !== 'undefined') {
+            AdMobService.hideNativeAd();
+            if (!window.isPremium) {
+                AdMobService.showGameplayAd();
+            }
+        }
+
         resumeTimer();
     }
 
@@ -655,10 +1683,62 @@ let isMistakeRescueRequestInProgress = false;
 
 
     const tutorialSteps = [
-        'Every row, column, and 3x3 grid must contain the numbers 1 to 9.',
-        'No number can repeat in the same row, column, or square.',
-        'Click a cell and type a number or use the number pad.',
-        'Careful! 3 mistakes and it is Game Over.'
+        {
+            title: 'The Standard Grid',
+            text: 'Every row, column, and 3x3 grid must contain the numbers 1 to 9.',
+            visualHtml: `
+                <div class="tut-mini-grid">
+                    <div class="tut-mini-cell">1</div>
+                    <div class="tut-mini-cell">2</div>
+                    <div class="tut-mini-cell highlight">3</div>
+                    <div class="tut-mini-cell">4</div>
+                    <div class="tut-mini-cell highlight">5</div>
+                    <div class="tut-mini-cell">6</div>
+                    <div class="tut-mini-cell highlight">7</div>
+                    <div class="tut-mini-cell">8</div>
+                    <div class="tut-mini-cell">9</div>
+                </div>
+            `
+        },
+        {
+            title: 'No Repetitions',
+            text: 'No number can repeat in the same row, column, or square.',
+            visualHtml: `
+                <div class="tut-mini-grid">
+                    <div class="tut-mini-cell">4</div>
+                    <div class="tut-mini-cell highlight">7</div>
+                    <div class="tut-mini-cell">2</div>
+                    <div class="tut-mini-cell">8</div>
+                    <div class="tut-mini-cell error-cell">7</div>
+                    <div class="tut-mini-cell">1</div>
+                    <div class="tut-mini-cell">6</div>
+                    <div class="tut-mini-cell">5</div>
+                    <div class="tut-mini-cell">9</div>
+                </div>
+            `
+        },
+        {
+            title: 'Simple Controls',
+            text: 'Click a cell and type a number or use the number pad.',
+            visualHtml: `
+                <div class="tut-big-icon-wrap">
+                    <div class="tut-big-icon-badge">
+                        <span class="material-symbols-outlined">dialpad</span>
+                    </div>
+                </div>
+            `
+        },
+        {
+            title: 'Mistake Limits',
+            text: 'Careful! 3 mistakes and it is Game Over.',
+            visualHtml: `
+                <div class="tut-big-icon-wrap">
+                    <div class="tut-big-icon-badge danger-badge">
+                        <span class="material-symbols-outlined">heart_broken</span>
+                    </div>
+                </div>
+            `
+        }
     ];
     let currentTutorialStep = 0;
 
@@ -722,6 +1802,63 @@ let isMistakeRescueRequestInProgress = false;
             notes.forEach((freq, i) => {
                 setTimeout(() => this.playTone(freq, 'sine', 0.2, 0.2), i * 150);
             });
+        }
+    };
+
+    // --- Native Haptic Engine ---
+    const HapticEngine = {
+        isEnabled() {
+            return !!isHapticEnabled;
+        },
+        light() {
+            if (!this.isEnabled()) return;
+            try {
+                if (Haptics && typeof Haptics.impact === 'function') {
+                    Haptics.impact({ style: 'LIGHT' }).catch(() => {});
+                } else if (navigator.vibrate) {
+                    navigator.vibrate(15);
+                }
+            } catch (e) {}
+        },
+        medium() {
+            if (!this.isEnabled()) return;
+            try {
+                if (Haptics && typeof Haptics.impact === 'function') {
+                    Haptics.impact({ style: 'MEDIUM' }).catch(() => {});
+                } else if (navigator.vibrate) {
+                    navigator.vibrate(30);
+                }
+            } catch (e) {}
+        },
+        warning() {
+            if (!this.isEnabled()) return;
+            try {
+                if (Haptics && typeof Haptics.notification === 'function') {
+                    Haptics.notification({ type: 'WARNING' }).catch(() => {});
+                } else if (navigator.vibrate) {
+                    navigator.vibrate([40, 60, 80]);
+                }
+            } catch (e) {}
+        },
+        success() {
+            if (!this.isEnabled()) return;
+            try {
+                if (Haptics && typeof Haptics.notification === 'function') {
+                    Haptics.notification({ type: 'SUCCESS' }).catch(() => {});
+                } else if (navigator.vibrate) {
+                    navigator.vibrate([30, 40, 60]);
+                }
+            } catch (e) {}
+        },
+        selection() {
+            if (!this.isEnabled()) return;
+            try {
+                if (Haptics && typeof Haptics.selectionChanged === 'function') {
+                    Haptics.selectionChanged().catch(() => {});
+                } else if (navigator.vibrate) {
+                    navigator.vibrate(10);
+                }
+            } catch (e) {}
         }
     };
 
@@ -820,10 +1957,15 @@ let isMistakeRescueRequestInProgress = false;
     StatsEngine.init();
 
     // Initialize Mute UI
-    muteBtn.textContent = SoundEngine.isMuted ? '🔈' : '🔊';
+    function updateMuteBtnUI(muted) {
+        if (!muteBtn) return;
+        muteBtn.innerHTML = `<span class="material-symbols-outlined">${muted ? 'volume_off' : 'volume_up'}</span>`;
+        muteBtn.setAttribute('title', muted ? 'Unmute Sound' : 'Mute Sound');
+    }
+    updateMuteBtnUI(SoundEngine.isMuted);
     muteBtn.addEventListener('click', () => {
         const muted = SoundEngine.toggleMute();
-        muteBtn.textContent = muted ? '🔈' : '🔊';
+        updateMuteBtnUI(muted);
     });
 
     // --- Grid Setup ---
@@ -866,9 +2008,7 @@ let isMistakeRescueRequestInProgress = false;
         pencilBtn.addEventListener('click', () => {
             isPencilMode = !isPencilMode;
             pencilBtn.classList.toggle('active', isPencilMode);
-            if (isPencilMode && isHapticEnabled && navigator.vibrate) {
-                navigator.vibrate(50);
-            }
+            HapticEngine.light();
         });
     }
 
@@ -880,7 +2020,7 @@ let isMistakeRescueRequestInProgress = false;
             if (selectedCell) {
                 selectedCell.classList.remove('selected');
                 selectedCell = null;
-                Array.from(board.children).forEach(c => c.classList.remove('crosshair'));
+                Array.from(board.children).forEach(c => c.classList.remove('crosshair', 'matching-number'));
             }
         }
     });
@@ -901,14 +2041,22 @@ let isMistakeRescueRequestInProgress = false;
 
     undoBtn.addEventListener('click', performUndo);
     newGameBtn.addEventListener('click', async () => {
-    if (typeof AdMobService !== "undefined") {
-        await AdMobService.showNewGameInterstitialAd();
-    }
-
-    startNewGame();
-    saveGameState();
-});
+        if (newGameBtn.disabled) return;
+        newGameBtn.disabled = true;
+        try {
+            if (typeof AdMobService !== "undefined") {
+                await AdMobService.showNewGameInterstitialAd();
+            }
+            startNewGame();
+            saveGameState();
+        } finally {
+            newGameBtn.disabled = false;
+        }
+    });
     hintBtn.addEventListener('click', giveHint);
+    if (autoCheckBtn) {
+        autoCheckBtn.addEventListener('click', handleAutoCheck);
+    }
     tryAgainBtn.addEventListener('click', tryAgain);
     restartGameBtn.addEventListener('click', restartGame);
 if (rewardAdCancel) {
@@ -919,35 +2067,44 @@ if (rewardAdConfirm) {
     rewardAdConfirm.addEventListener('click', () => closeRewardAdModal(true));
 }
     async function runCompletionNavigationWithAd(navigateAfterAd) {
-    if (isCompletionNavigationInProgress) return;
+        if (isCompletionNavigationInProgress) return;
 
-    isCompletionNavigationInProgress = true;
+        isCompletionNavigationInProgress = true;
 
-    if (victoryNextBtn) victoryNextBtn.disabled = true;
-    if (victoryHomeBtn) victoryHomeBtn.disabled = true;
+        if (victoryNextBtn) victoryNextBtn.disabled = true;
+        if (victoryHomeBtn) victoryHomeBtn.disabled = true;
 
-    try {
-        completionNavigationCountThisSession++;
-
-        const shouldTryInterstitial =
-            completionNavigationCountThisSession > 1 &&
-            completionNavigationCountThisSession % 2 === 0;
-
-        if (shouldTryInterstitial && typeof AdMobService !== "undefined") {
-            await AdMobService.showCompletionInterstitialAd();
+        if (typeof AdMobService !== 'undefined') {
+            AdMobService.hideNativeAd();
         }
+        if (victoryModal) victoryModal.classList.remove('has-native-ad');
 
-        navigateAfterAd();
-    } catch (error) {
-        console.error("Completion navigation failed:", error);
-        navigateAfterAd();
-    } finally {
-        isCompletionNavigationInProgress = false;
+        try {
+            if (typeof ReviewPromptManager !== 'undefined') {
+                await ReviewPromptManager.handleVictoryAction();
+            }
 
-        if (victoryNextBtn) victoryNextBtn.disabled = false;
-        if (victoryHomeBtn) victoryHomeBtn.disabled = false;
+            completionNavigationCountThisSession++;
+
+            const everyN = (typeof AdMobConfig !== 'undefined' && AdMobConfig.REMOTE && AdMobConfig.REMOTE.completion_interstitial_every != null)
+                ? Number(AdMobConfig.REMOTE.completion_interstitial_every)
+                : 1;
+
+            if (typeof AdMobService !== "undefined" && completionNavigationCountThisSession % everyN === 0) {
+                await AdMobService.showCompletionInterstitialAd();
+            }
+
+            navigateAfterAd();
+        } catch (error) {
+            console.error("Completion navigation failed:", error);
+            navigateAfterAd();
+        } finally {
+            isCompletionNavigationInProgress = false;
+
+            if (victoryNextBtn) victoryNextBtn.disabled = false;
+            if (victoryHomeBtn) victoryHomeBtn.disabled = false;
+        }
     }
-}
     if (victoryNextBtn) {
     victoryNextBtn.addEventListener('click', () => {
         runCompletionNavigationWithAd(() => {
@@ -964,8 +2121,17 @@ if (rewardAdConfirm) {
 }
 
     if (victoryReplayBtn) {
-        victoryReplayBtn.addEventListener('click', () => {
+        victoryReplayBtn.addEventListener('click', async () => {
+            if (typeof AdMobService !== 'undefined') {
+                AdMobService.hideNativeAd();
+            }
+            if (victoryModal) victoryModal.classList.remove('has-native-ad');
             victoryModal.classList.add('hidden');
+
+            if (typeof ReviewPromptManager !== 'undefined') {
+                await ReviewPromptManager.handleVictoryAction();
+            }
+
             if (completedPuzzleSnapshot) {
                 // Clear active play state
                 isPaused = false;
@@ -1074,24 +2240,38 @@ if (rewardAdConfirm) {
     }
 
     if (victoryHomeBtn) {
-    victoryHomeBtn.addEventListener('click', () => {
-        runCompletionNavigationWithAd(() => {
-            victoryModal.classList.add('hidden');
-            showView('home');
+        victoryHomeBtn.addEventListener('click', () => {
+            runCompletionNavigationWithAd(() => {
+                victoryModal.classList.add('hidden');
+                showView('home');
+            });
         });
-    });
-}
+    }
+
+    if (victoryCloseBtn) {
+        victoryCloseBtn.addEventListener('click', () => {
+            runCompletionNavigationWithAd(() => {
+                victoryModal.classList.add('hidden');
+                showView('home');
+            });
+        });
+    }
 
     // Settings logic
     if (settingsBtn) {
         settingsBtn.addEventListener('click', () => {
+            ThemeEngine.updateSettingsUI();
             settingsModal.classList.remove('hidden');
+            if (typeof AdMobService !== 'undefined') AdMobService.hideNativeAd();
         });
     }
 
     if (closeSettingsBtn) {
         closeSettingsBtn.addEventListener('click', () => {
             settingsModal.classList.add('hidden');
+            if (!homeScreen.classList.contains('hidden-view') && typeof AdMobService !== 'undefined') {
+                AdMobService.showNativeAd('home');
+            }
         });
     }
 
@@ -1104,19 +2284,274 @@ if (rewardAdConfirm) {
 
     if (settingsAdsBtn) {
         settingsAdsBtn.addEventListener('click', () => {
-            alert('Remove Ads feature is coming soon!');
+            if (window.isPremium) return;
+            
+            let Billing = null;
+            if (window.Capacitor && window.Capacitor.registerPlugin) {
+                Billing = window.Capacitor.registerPlugin('Billing');
+            } else if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Billing) {
+                Billing = window.Capacitor.Plugins.Billing;
+            }
+
+            if (Billing) {
+                if (typeof AdMobService !== 'undefined') {
+                    AdMobService.hideNativeAd();
+                    AdMobService.setPurchaseActive(true);
+                }
+                Billing.purchaseRemoveAds().catch(e => {
+                    console.warn("Purchase error", e);
+                    if (typeof AdMobService !== 'undefined') {
+                        AdMobService.setPurchaseActive(false);
+                    }
+                    alert("Purchase error: " + (e.message || JSON.stringify(e)));
+                }).finally(() => {
+                    setTimeout(() => {
+                        if (typeof AdMobService !== 'undefined') {
+                            AdMobService.setPurchaseActive(false);
+                        }
+                    }, 500);
+                });
+                trackEvent('remove_ads_clicked');
+            } else {
+                alert('Billing is not available on this platform. (Plugin not registered)');
+            }
         });
     }
+
+    // ═══════════════════════════════════════════════
+    //  THEME ENGINE (Classic, Night, Wood, Cyberpunk)
+    // ═══════════════════════════════════════════════
+
+    const ThemeEngine = {
+        THEMES: {
+            classic: { id: 'classic', name: 'Classic', free: true },
+            dark: { id: 'dark', name: 'Night', free: true },
+            wood: { id: 'wood', name: 'Zen Wood', free: false },
+            cyberpunk: { id: 'cyberpunk', name: 'Cyber Neon', free: false }
+        },
+
+        getUnlocks() {
+            try {
+                return JSON.parse(localStorage.getItem('sudoku-theme-unlocks') || '{}');
+            } catch (e) {
+                return {};
+            }
+        },
+
+        saveUnlocks(unlocks) {
+            try {
+                localStorage.setItem('sudoku-theme-unlocks', JSON.stringify(unlocks));
+            } catch (e) {}
+        },
+
+        isThemeUnlocked(themeId) {
+            const def = this.THEMES[themeId];
+            if (!def) return false;
+            if (def.free) return true;
+            if (window.isPremium) return true;
+
+            const unlocks = this.getUnlocks();
+            const expiry = unlocks[themeId];
+            if (expiry && typeof expiry === 'number' && expiry > Date.now()) {
+                return true;
+            }
+            return false;
+        },
+
+        getRemainingTimeFormatted(themeId) {
+            if (window.isPremium || (this.THEMES[themeId] && this.THEMES[themeId].free)) {
+                return 'Unlocked';
+            }
+            const unlocks = this.getUnlocks();
+            const expiry = unlocks[themeId];
+            if (!expiry || expiry <= Date.now()) return null;
+            const diffMs = expiry - Date.now();
+            const diffHours = Math.ceil(diffMs / (3600 * 1000));
+            if (diffHours >= 1) {
+                return `${diffHours}h left`;
+            }
+            const diffMinutes = Math.max(1, Math.ceil(diffMs / (60 * 1000)));
+            return `${diffMinutes}m left`;
+        },
+
+        cleanExpired() {
+            const unlocks = this.getUnlocks();
+            let changed = false;
+            const now = Date.now();
+            for (const id in unlocks) {
+                if (unlocks[id] <= now) {
+                    delete unlocks[id];
+                    changed = true;
+                    trackEvent('theme_unlock_expired', { theme_id: id });
+                }
+            }
+            if (changed) {
+                this.saveUnlocks(unlocks);
+            }
+
+            // Fallback: if current active theme expired and is now locked, revert safely
+            const currentTheme = localStorage.getItem('sudoku-selected-theme') || (isNightMode ? 'dark' : 'classic');
+            if (!this.isThemeUnlocked(currentTheme)) {
+                console.log(`[ThemeEngine] Active theme "${currentTheme}" expired. Reverting to free default.`);
+                const fallback = isNightMode ? 'dark' : 'classic';
+                this.applyTheme(fallback, true);
+            }
+        },
+
+        applyTheme(themeId, skipLockCheck = false) {
+            if (!skipLockCheck && !this.isThemeUnlocked(themeId)) {
+                this.promptUnlock(themeId);
+                return;
+            }
+
+            const theme = this.THEMES[themeId] ? themeId : 'classic';
+            localStorage.setItem('sudoku-selected-theme', theme);
+
+            if (theme === 'classic') {
+                document.documentElement.removeAttribute('data-theme');
+                isNightMode = false;
+                localStorage.setItem('sudoku-night-mode', false);
+                if (nightModeToggle) nightModeToggle.checked = false;
+            } else if (theme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                isNightMode = true;
+                localStorage.setItem('sudoku-night-mode', true);
+                if (nightModeToggle) nightModeToggle.checked = true;
+            } else {
+                document.documentElement.setAttribute('data-theme', theme);
+                isNightMode = false;
+                if (nightModeToggle) nightModeToggle.checked = false;
+            }
+
+            this.updateSettingsUI();
+        },
+
+        async promptUnlock(themeId) {
+            const def = this.THEMES[themeId];
+            if (!def) return;
+
+            trackEvent('theme_unlock_tapped', { theme_id: themeId });
+
+            const isRewardEnabled = typeof AdMobService !== 'undefined'
+                ? AdMobService.isFeatureEnabled('theme_rewarded_unlock_enabled')
+                : true;
+
+            if (!isRewardEnabled) {
+                showToast(`${def.name} theme requires Sudoku Pro membership.`);
+                return;
+            }
+
+            const durationHours = typeof AdMobService !== 'undefined'
+                ? Number(AdMobService.getRemoteValue('theme_unlock_duration_hours', 24))
+                : 24;
+
+            const confirmed = await showRewardAdModal({
+                icon: "palette",
+                title: `Unlock ${def.name}`,
+                message: `Watch a short sponsor video to unlock the ${def.name} theme for ${durationHours} hours!`,
+                confirmText: "Watch Ad & Unlock",
+                cancelText: "Not Now"
+            });
+
+            if (!confirmed) {
+                return;
+            }
+
+            trackEvent('theme_unlock_ad_started', { theme_id: themeId });
+
+            let rewarded = false;
+            if (window.isPremium) {
+                rewarded = true;
+            } else if (typeof AdMobService !== 'undefined') {
+                rewarded = await AdMobService.showThemeUnlockRewardedAd(themeId);
+            } else {
+                rewarded = true;
+            }
+
+            if (rewarded) {
+                const unlocks = this.getUnlocks();
+                unlocks[themeId] = Date.now() + (durationHours * 3600 * 1000);
+                this.saveUnlocks(unlocks);
+
+                trackEvent('theme_unlock_reward_earned', { theme_id: themeId });
+                trackEvent('theme_unlock_granted', { theme_id: themeId, duration_hours: durationHours });
+
+                this.applyTheme(themeId, true);
+                showToast(`${def.name} theme unlocked for ${durationHours} hours!`);
+            } else {
+                trackEvent('theme_unlock_failed', { theme_id: themeId });
+                showToast('Ad was not completed. Theme remains locked.');
+            }
+        },
+
+        updateSettingsUI() {
+            const currentTheme = localStorage.getItem('sudoku-selected-theme') || (isNightMode ? 'dark' : 'classic');
+            const cards = document.querySelectorAll('.theme-option-card');
+            cards.forEach(card => {
+                const id = card.getAttribute('data-theme-id');
+                if (!id) return;
+
+                if (id === currentTheme) {
+                    card.classList.add('active');
+                } else {
+                    card.classList.remove('active');
+                }
+
+                const statusEl = card.querySelector('.theme-option-status');
+                if (statusEl) {
+                    const def = this.THEMES[id];
+                    if (def && def.free) {
+                        statusEl.className = 'theme-option-status free';
+                        statusEl.innerHTML = id === currentTheme ? 'Active' : 'Included';
+                    } else if (window.isPremium) {
+                        statusEl.className = 'theme-option-status free';
+                        statusEl.innerHTML = id === currentTheme ? 'Active' : 'Premium';
+                    } else {
+                        const remaining = this.getRemainingTimeFormatted(id);
+                        if (remaining) {
+                            statusEl.className = 'theme-option-status active-unlock';
+                            statusEl.innerHTML = `<span class="material-symbols-outlined theme-lock-icon">schedule</span> ${remaining}`;
+                        } else {
+                            statusEl.className = 'theme-option-status locked';
+                            statusEl.innerHTML = `<span class="material-symbols-outlined theme-lock-icon">lock</span> Unlock 24h`;
+                        }
+                    }
+                }
+            });
+        },
+
+        init() {
+            this.cleanExpired();
+            const savedTheme = localStorage.getItem('sudoku-selected-theme') || (isNightMode ? 'dark' : 'classic');
+            if (this.isThemeUnlocked(savedTheme)) {
+                this.applyTheme(savedTheme, true);
+            } else {
+                this.applyTheme('classic', true);
+            }
+
+            // Wire theme cards click
+            const cards = document.querySelectorAll('.theme-option-card');
+            cards.forEach(card => {
+                card.addEventListener('click', () => {
+                    const id = card.getAttribute('data-theme-id');
+                    if (id) {
+                        this.applyTheme(id);
+                    }
+                });
+            });
+
+            this.updateSettingsUI();
+        }
+    };
 
     if (nightModeToggle) {
         nightModeToggle.addEventListener('change', (e) => {
             isNightMode = e.target.checked;
             if (isNightMode) {
-                document.documentElement.setAttribute('data-theme', 'dark');
+                ThemeEngine.applyTheme('dark', true);
             } else {
-                document.documentElement.removeAttribute('data-theme');
+                ThemeEngine.applyTheme('classic', true);
             }
-            localStorage.setItem('sudoku-night-mode', isNightMode);
         });
     }
 
@@ -1124,6 +2559,7 @@ if (rewardAdConfirm) {
         hapticToggle.addEventListener('change', (e) => {
             isHapticEnabled = e.target.checked;
             localStorage.setItem('sudoku-haptic', isHapticEnabled);
+            if (isHapticEnabled) HapticEngine.selection();
         });
     }
 
@@ -1157,10 +2593,16 @@ if (rewardAdConfirm) {
     consentAcceptBtn.addEventListener('click', () => {
         localStorage.setItem('sudoku-consent-accepted', 'true');
         consentModal.classList.add('hidden');
+        if (!localStorage.getItem('sudoku-tutorial-seen')) {
+            showTutorial();
+            localStorage.setItem('sudoku-tutorial-seen', 'true');
+        }
     });
 
-    tutorialNextBtn.addEventListener('click', nextTutorialStep);
-    tutorialSkipBtn.addEventListener('click', () => tutorialModal.classList.add('hidden'));
+    if (tutorialNextBtn) tutorialNextBtn.addEventListener('click', nextTutorialStep);
+    if (tutorialBackBtn) tutorialBackBtn.addEventListener('click', prevTutorialStep);
+    if (tutorialSkipBtn) tutorialSkipBtn.addEventListener('click', () => tutorialModal.classList.add('hidden'));
+    if (tutorialCloseBtn) tutorialCloseBtn.addEventListener('click', () => tutorialModal.classList.add('hidden'));
 
     function showTutorial() {
         currentTutorialStep = 0;
@@ -1177,16 +2619,40 @@ if (rewardAdConfirm) {
         }
     }
 
+    function prevTutorialStep() {
+        if (currentTutorialStep > 0) {
+            currentTutorialStep--;
+            updateTutorialUI();
+        }
+    }
+
     function updateTutorialUI() {
-        tutorialText.textContent = tutorialSteps[currentTutorialStep];
-        tutorialStepIndicator.textContent = `${currentTutorialStep + 1} / ${tutorialSteps.length}`;
+        const step = tutorialSteps[currentTutorialStep];
+        if (!step) return;
+
+        if (tutorialVisual) tutorialVisual.innerHTML = step.visualHtml;
+        if (tutorialStepTitle) tutorialStepTitle.textContent = step.title;
+        if (tutorialText) tutorialText.textContent = step.text;
+        if (tutorialStepIndicator) tutorialStepIndicator.textContent = `${currentTutorialStep + 1} of ${tutorialSteps.length}`;
         
+        if (tutorialDotsWrap) {
+            const dots = tutorialDotsWrap.querySelectorAll('.tut-dot');
+            dots.forEach((dot, idx) => {
+                dot.classList.toggle('active', idx === currentTutorialStep);
+            });
+        }
+
+        if (tutorialBackBtn) {
+            tutorialBackBtn.disabled = (currentTutorialStep === 0);
+            tutorialBackBtn.style.visibility = (currentTutorialStep === 0) ? 'hidden' : 'visible';
+        }
+
         if (currentTutorialStep === tutorialSteps.length - 1) {
-            tutorialNextBtn.textContent = 'Start Playing';
-            tutorialSkipBtn.style.display = 'none';
+            if (tutorialNextBtn) tutorialNextBtn.textContent = 'Start Playing';
+            if (tutorialSkipBtn) tutorialSkipBtn.style.display = 'none';
         } else {
-            tutorialNextBtn.textContent = 'Next';
-            tutorialSkipBtn.style.display = 'flex'; // Restore visibility
+            if (tutorialNextBtn) tutorialNextBtn.textContent = 'Next';
+            if (tutorialSkipBtn) tutorialSkipBtn.style.display = 'inline-flex';
         }
     }
     function getPendingBonusHints() {
@@ -1209,8 +2675,12 @@ function applyPendingBonusHintsForNewPuzzle() {
 
     console.log(`Applied ${pendingBonusHints} bonus hint(s) to this puzzle.`);
 }
-    function showRewardAdModal({ icon, title, message, confirmText, cancelText }) {
+    function showRewardAdModal({ icon, title, message, confirmText, cancelText, noteText }) {
     return new Promise((resolve) => {
+        if (window.isPremium) {
+            resolve(true);
+            return;
+        }
         if (!rewardAdModal || !rewardAdConfirm || !rewardAdCancel) {
             resolve(false);
             return;
@@ -1221,8 +2691,27 @@ function applyPendingBonusHintsForNewPuzzle() {
         if (rewardAdIcon) rewardAdIcon.textContent = icon;
         if (rewardAdTitle) rewardAdTitle.textContent = title;
         if (rewardAdMessage) rewardAdMessage.textContent = message;
-        if (rewardAdConfirm) rewardAdConfirm.textContent = confirmText || "Watch Ad";
+
+        const confirmTextEl = document.getElementById('reward-ad-confirm-text');
+        if (confirmTextEl) {
+            confirmTextEl.textContent = confirmText || "Watch Ad";
+        } else if (rewardAdConfirm) {
+            rewardAdConfirm.textContent = confirmText || "Watch Ad";
+        }
+
         if (rewardAdCancel) rewardAdCancel.textContent = cancelText || "Not Now";
+
+        const noteEl = document.getElementById('reward-ad-note');
+        const noteTextEl = document.getElementById('reward-ad-note-text');
+        if (noteText) {
+            if (noteTextEl) noteTextEl.textContent = noteText;
+            if (noteEl) noteEl.style.display = 'flex';
+        } else if (title && title.includes('Home')) {
+            if (noteEl) noteEl.style.display = 'none';
+        } else {
+            if (noteTextEl) noteTextEl.textContent = "Instant return to board • 15–30 sec sponsor clip";
+            if (noteEl) noteEl.style.display = 'flex';
+        }
 
         rewardAdModal.classList.remove('hidden');
     });
@@ -1236,7 +2725,27 @@ function closeRewardAdModal(result) {
         rewardAdModalResolve = null;
     }
 }
-function tryAgain() {
+async function tryAgain() {
+    console.log("[GameOverAction] Player tapped 'Try Again' (Reset Grid).");
+    if (isGameOverNavigationInProgress) {
+        console.warn("[GameOverAction] Navigation already in progress. Ignoring duplicate tap.");
+        return;
+    }
+    isGameOverNavigationInProgress = true;
+    if (tryAgainBtn) tryAgainBtn.disabled = true;
+    if (restartGameBtn) restartGameBtn.disabled = true;
+
+    try {
+        if (typeof AdMobService !== 'undefined') {
+            await AdMobService.showGameOverInterstitialAd({ action: 'try_again' });
+        }
+    } catch (e) {
+        console.warn('[GameOverAction] Game Over interstitial error:', e);
+    } finally {
+        isGameOverNavigationInProgress = false;
+        if (tryAgainBtn) tryAgainBtn.disabled = false;
+        if (restartGameBtn) restartGameBtn.disabled = false;
+
         gameOverModal.classList.add('hidden');
         mistakes = 0;
         updateMistakeUI();
@@ -1261,14 +2770,37 @@ function tryAgain() {
         startTimer();
         saveGameState();
     }
+}
 
-    function restartGame() {
+async function restartGame() {
+    console.log("[GameOverAction] Player tapped 'New Game' from Game Over screen.");
+    if (isGameOverNavigationInProgress) {
+        console.warn("[GameOverAction] Navigation already in progress. Ignoring duplicate tap.");
+        return;
+    }
+    isGameOverNavigationInProgress = true;
+    if (tryAgainBtn) tryAgainBtn.disabled = true;
+    if (restartGameBtn) restartGameBtn.disabled = true;
+
+    try {
+        if (typeof AdMobService !== 'undefined') {
+            await AdMobService.showGameOverInterstitialAd({ action: 'new_game' });
+        }
+    } catch (e) {
+        console.warn('[GameOverAction] Game Over interstitial error:', e);
+    } finally {
+        isGameOverNavigationInProgress = false;
+        if (tryAgainBtn) tryAgainBtn.disabled = false;
+        if (restartGameBtn) restartGameBtn.disabled = false;
+
         gameOverModal.classList.add('hidden');
         startNewGame();
         saveGameState();
     }
+}
 
     function selectCell(cell) {
+        clearAutoCheckHighlights();
         if (cell.classList.contains('locked-group') || cell.classList.contains('prefilled')) {
             cell.classList.remove('locked-pulse');
             void cell.offsetWidth; // Trigger reflow for animation
@@ -1276,26 +2808,45 @@ function tryAgain() {
             // Allow selection to continue so users can still see crosshairs
         }
 
+        if (selectedCell !== cell) {
+            HapticEngine.selection();
+        }
+
         if (selectedCell) {
             selectedCell.classList.remove('selected');
         }
         
-        // Remove old crosshairs
-        Array.from(board.children).forEach(c => c.classList.remove('crosshair'));
+        // Remove old crosshairs and matching numbers
+        Array.from(board.children).forEach(c => {
+            c.classList.remove('crosshair', 'matching-number');
+        });
 
         selectedCell = cell;
         selectedCell.classList.add('selected');
         
-        // Add new crosshairs
+        // Add new crosshairs and matching numbers
         const index = parseInt(cell.dataset.index);
         const row = Math.floor(index / 9);
         const col = index % 9;
+        const boxRow = Math.floor(row / 3);
+        const boxCol = Math.floor(col / 3);
+        const cellVal = cell.dataset.value;
         
         Array.from(board.children).forEach((c, i) => {
+            if (i === index) return;
             const r = Math.floor(i / 9);
             const cCol = i % 9;
-            if ((r === row || cCol === col) && i !== index) {
+            const bRow = Math.floor(r / 3);
+            const bCol = Math.floor(cCol / 3);
+
+            // Peer highlighting: same row, same column, or same 3x3 block
+            if (r === row || cCol === col || (bRow === boxRow && bCol === boxCol)) {
                 c.classList.add('crosshair');
+            }
+
+            // Matching number highlighting across the entire board
+            if (cellVal && String(cellVal).trim() !== '' && c.dataset.value === cellVal) {
+                c.classList.add('matching-number');
             }
         });
     }
@@ -1375,7 +2926,9 @@ function tryAgain() {
             cell.textContent = '';
             cell.classList.remove('user-input');
             SoundEngine.playPop();
+            HapticEngine.medium();
             validateBoard();
+            if (selectedCell === cell) selectCell(cell);
             saveGameState();
             return;
         }
@@ -1405,14 +2958,22 @@ function tryAgain() {
                 renderNotes(cell);
             }
             SoundEngine.playPop();
+            HapticEngine.light();
         } else {
             // Normal Mode
             const correctValue = solvedGrid[cell.dataset.index].toString();
             if (value !== correctValue) {
                 mistakes++;
                 mistakesThisGame++;
+                trackEvent('mistake_made', {
+                    difficulty: selectedDifficulty,
+                    is_daily_challenge: isDailyChallenge,
+                    mistakes: mistakes,
+                    mistakes_this_game: mistakesThisGame,
+                    max_mistakes: MAX_MISTAKES
+                });
                 SoundEngine.playBuzz();
-                if (isHapticEnabled && navigator.vibrate) navigator.vibrate(200);
+                HapticEngine.warning();
                 updateMistakeUI();
                 StatsEngine.recordMistake();
                 if (mistakes >= MAX_MISTAKES) {
@@ -1421,6 +2982,11 @@ function tryAgain() {
 }
             } else {
                 SoundEngine.playPop();
+                HapticEngine.light();
+                cell.classList.remove('number-pop');
+                void cell.offsetWidth;
+                cell.classList.add('number-pop');
+                cell.addEventListener('animationend', () => cell.classList.remove('number-pop'), { once: true });
             }
 
             if (undosRemaining > 0) {
@@ -1438,6 +3004,7 @@ function tryAgain() {
             }
             
             validateBoard();
+            if (selectedCell === cell) selectCell(cell);
         }
         saveGameState();
     }
@@ -1498,9 +3065,12 @@ const wantsRescue = await showRewardAdModal({
         SoundEngine.playGameOver();
         clearSavedGame();
         gameOverModal.classList.remove('hidden');
+        trackEvent('game_over', { difficulty: selectedDifficulty, is_daily_challenge: isDailyChallenge, elapsed_seconds: secondsElapsed, mistakes: mistakes });
     }
 
-    // --- Validation Logic ---
+    // --- Validation & Group Pulse Logic ---
+    let completedGroupsTracker = new Set();
+
     function validateBoard() {
         const cells = Array.from(board.children);
         cells.forEach(c => {
@@ -1527,9 +3097,12 @@ const wantsRescue = await showRewardAdModal({
             }
         }
         
-        // --- Cell Locking Logic ---
+        // --- Cell Locking Logic & Group Completion Feedback ---
         // Only lock if there are no errors on the board (prevents locking a row if an intersecting column is wrong)
         if (!hasErrors) {
+            const newlyCompletedCells = [];
+            const currentCompletedKeys = new Set();
+
             // Check Rows
             for (let r = 0; r < 9; r++) {
                 const rowCells = [];
@@ -1539,7 +3112,14 @@ const wantsRescue = await showRewardAdModal({
                     rowCells.push(cells[idx]);
                     if (!gridState[idx]) isComplete = false;
                 }
-                if (isComplete) rowCells.forEach(cell => cell.classList.add('locked-group'));
+                if (isComplete) {
+                    rowCells.forEach(cell => cell.classList.add('locked-group'));
+                    const groupKey = 'row_' + r;
+                    currentCompletedKeys.add(groupKey);
+                    if (!completedGroupsTracker.has(groupKey)) {
+                        newlyCompletedCells.push(...rowCells);
+                    }
+                }
             }
             
             // Check Columns
@@ -1551,7 +3131,14 @@ const wantsRescue = await showRewardAdModal({
                     colCells.push(cells[idx]);
                     if (!gridState[idx]) isComplete = false;
                 }
-                if (isComplete) colCells.forEach(cell => cell.classList.add('locked-group'));
+                if (isComplete) {
+                    colCells.forEach(cell => cell.classList.add('locked-group'));
+                    const groupKey = 'col_' + c;
+                    currentCompletedKeys.add(groupKey);
+                    if (!completedGroupsTracker.has(groupKey)) {
+                        newlyCompletedCells.push(...colCells);
+                    }
+                }
             }
             
             // Check 3x3 Blocks
@@ -1568,9 +3155,30 @@ const wantsRescue = await showRewardAdModal({
                             if (!gridState[idx]) isComplete = false;
                         }
                     }
-                    if (isComplete) blockCells.forEach(cell => cell.classList.add('locked-group'));
+                    if (isComplete) {
+                        blockCells.forEach(cell => cell.classList.add('locked-group'));
+                        const groupKey = 'box_' + br + '_' + bc;
+                        currentCompletedKeys.add(groupKey);
+                        if (!completedGroupsTracker.has(groupKey)) {
+                            newlyCompletedCells.push(...blockCells);
+                        }
+                    }
                 }
             }
+
+            // Pulse newly completed groups and trigger subtle medium haptic
+            if (newlyCompletedCells.length > 0 && completedGroupsTracker.size > 0) {
+                HapticEngine.medium();
+                const uniqueCells = Array.from(new Set(newlyCompletedCells));
+                uniqueCells.forEach(c => {
+                    c.classList.remove('group-completed-pulse');
+                    void c.offsetWidth;
+                    c.classList.add('group-completed-pulse');
+                    c.addEventListener('animationend', () => c.classList.remove('group-completed-pulse'), { once: true });
+                });
+            }
+
+            completedGroupsTracker = currentCompletedKeys;
         }
 
         checkWinCondition(hasErrors);
@@ -1590,8 +3198,22 @@ const wantsRescue = await showRewardAdModal({
                 
                 // Mark daily challenge completed if applicable
                 if (isDailyChallenge) {
-                    DailyChallengeEngine.markCompleted(DailyChallengeEngine.todayKey());
+                    const completedKey = activeDailyChallengeDateKey || DailyChallengeEngine.todayKey();
+                    DailyChallengeEngine.markCompleted(completedKey);
+                    trackEvent('daily_challenge_completed', {
+                        daily_date: completedKey,
+                        difficulty: selectedDifficulty
+                    });
                 }
+
+                trackEvent('puzzle_completed', {
+                    difficulty: selectedDifficulty,
+                    is_daily_challenge: isDailyChallenge,
+                    mistakes: mistakes,
+                    hints_used_this_game: hintsUsedThisGame,
+                    mistakes_this_game: mistakesThisGame,
+                    elapsed_seconds: secondsElapsed
+                });
 
                 // Fire achievement checks
                 const winFlags = {
@@ -1599,6 +3221,18 @@ const wantsRescue = await showRewardAdModal({
                     noHints: hintsUsedThisGame === 0
                 };
                 AchievementsEngine.onWin(winFlags);
+
+                // Record puzzle completion for in-app review strategy
+                if (typeof ReviewPromptManager !== 'undefined') {
+                    ReviewPromptManager.recordPuzzleCompleted({
+                        difficulty: selectedDifficulty,
+                        isDaily: isDailyChallenge,
+                        mistakes: mistakesThisGame,
+                        hints: hintsUsedThisGame,
+                        isNewBest: isNewBest,
+                        streak: StatsEngine.stats.currentStreak
+                    });
+                }
 
                 // Level up (only for non-daily games)
                 if (!isDailyChallenge) {
@@ -1614,6 +3248,7 @@ const wantsRescue = await showRewardAdModal({
             
             clearSavedGame();
             SoundEngine.playVictory();
+            HapticEngine.success();
 
             // Small timeout to allow UI to render the last number before modal
             setTimeout(() => {
@@ -1640,6 +3275,20 @@ const wantsRescue = await showRewardAdModal({
                     if (vTime) vTime.textContent = timerDisplay.textContent;
                     if (vMistakes) vMistakes.textContent = mistakesThisGame.toString();
                     if (vHints) vHints.textContent = hintsUsedThisGame.toString();
+
+                    const vScore = document.getElementById('victory-score');
+                    if (vScore) {
+                        const basePts = selectedDifficulty === 'expert' ? 3500 : selectedDifficulty === 'hard' ? 2500 : selectedDifficulty === 'medium' ? 1800 : 1200;
+                        const timePenalty = Math.min(1000, secondsElapsed * 2);
+                        const mistakePenalty = mistakesThisGame * 200;
+                        const finalScore = Math.max(500, basePts - timePenalty - mistakePenalty);
+                        vScore.textContent = `+${finalScore.toLocaleString()} pts`;
+                    }
+
+                    const pristineBadge = document.querySelector('.victory-pristine-badge');
+                    if (pristineBadge) {
+                        pristineBadge.style.display = (mistakesThisGame === 0 && hintsUsedThisGame === 0) ? 'inline-flex' : 'none';
+                    }
                     
                     if (vBest) {
                         if (completedPuzzleSnapshot && completedPuzzleSnapshot.isNewBest) {
@@ -1673,10 +3322,22 @@ const wantsRescue = await showRewardAdModal({
 
                   bonusRewardClaimedForCurrentVictory = false;
 
-                 if (victoryBonusBtn) {
-                     victoryBonusBtn.textContent = "🎁 Claim Bonus Hint";
-                     victoryBonusBtn.disabled = false;
-}   
+                  if (victoryBonusBtn) {
+                      victoryBonusBtn.textContent = "🎁 Claim Bonus Hint (2x)";
+                      victoryBonusBtn.disabled = false;
+                  }
+                  if (typeof AdMobService !== 'undefined') {
+                      AdMobService.setGameplayActive(false);
+                      AdMobService.hideGameplayBannerAd();
+                      AdMobService.showNativeAd('victory');
+                  }
+
+                  const hasNativeAd = (typeof window.Capacitor !== 'undefined' && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform() && !window.isPremium);
+                  if (hasNativeAd) {
+                      victoryModal.classList.add('has-native-ad');
+                  } else {
+                      victoryModal.classList.remove('has-native-ad');
+                  }
                   victoryModal.classList.remove('hidden');
                 } else {
                     alert(`Congratulations! Puzzle solved in ${timerDisplay.textContent}.`);
@@ -1711,10 +3372,19 @@ const wantsRescue = await showRewardAdModal({
         }
 
         undosRemaining--;
+        HapticEngine.medium();
         selectCell(lastAction.cell);
         updateUndoUI();
         validateBoard();
         saveGameState();
+
+        trackEvent('undo_used', {
+            difficulty: selectedDifficulty,
+            is_daily_challenge: isDailyChallenge,
+            undo_stack_remaining: undosRemaining,
+            mistakes: mistakes,
+            hints_remaining: hintsRemaining
+        });
     }
 
     function updateUndoUI() {
@@ -1769,6 +3439,7 @@ const wantsAd = await showRewardAdModal({
 
             if (rewardEarned) {
     hintsRemaining += 1;
+    trackEvent('bonus_hint_claimed', { hints_remaining: hintsRemaining, difficulty: selectedDifficulty, is_daily_challenge: isDailyChallenge });
     updateHintUI();
     saveGameState();
 } else {
@@ -1798,22 +3469,30 @@ const wantsAd = await showRewardAdModal({
         targetCell.textContent = correctValue;
         targetCell.classList.remove('user-input', 'error');
         targetCell.classList.add('prefilled'); // Lock it
+        targetCell.classList.remove('number-pop');
+        void targetCell.offsetWidth;
+        targetCell.classList.add('number-pop');
+        targetCell.addEventListener('animationend', () => targetCell.classList.remove('number-pop'), { once: true });
+        HapticEngine.light();
         validateBoard();
 
         hintsRemaining--;
         hintsUsedThisGame++;
+        trackEvent('hint_used', { hints_remaining: hintsRemaining, difficulty: selectedDifficulty, is_daily_challenge: isDailyChallenge, hints_used_this_game: hintsUsedThisGame });
         updateHintUI();
         saveGameState();
     }
 
     function updateHintUI() {
-    if (hintCountSpan) {
-        if (hintsRemaining <= 0) {
-            hintCountSpan.textContent = "Watch Ad";
-        } else {
-            hintCountSpan.textContent = hintsRemaining;
+        if (hintCountSpan) {
+            if (hintsRemaining <= 0) {
+                hintCountSpan.textContent = "AD";
+                hintCountSpan.className = "tool-badge tool-badge-ad";
+            } else {
+                hintCountSpan.textContent = hintsRemaining;
+                hintCountSpan.className = "tool-badge";
+            }
         }
-    }
 
     if (hintBtn) {
         hintBtn.disabled = isRewardedHintRequestInProgress;
@@ -1827,6 +3506,165 @@ const wantsAd = await showRewardAdModal({
         }
     }
 }
+
+    // --- Auto-Check / Scan Mistakes Logic ---
+    function clearAutoCheckHighlights() {
+        if (autoCheckClearTimeoutId) {
+            clearTimeout(autoCheckClearTimeoutId);
+            autoCheckClearTimeoutId = null;
+        }
+        const boardEl = document.getElementById('sudoku-board');
+        if (!boardEl) return;
+        const highlighted = boardEl.querySelectorAll('.auto-check-error, .auto-check-correct');
+        highlighted.forEach(el => el.classList.remove('auto-check-error', 'auto-check-correct'));
+    }
+
+    function updateAutoCheckUI() {
+        if (!autoCheckBtn || !autoCheckBadge) return;
+        const puzzleLimit = typeof AdMobService !== 'undefined'
+            ? Number(AdMobService.getRemoteValue('auto_check_per_puzzle_limit', 1))
+            : 1;
+
+        if (window.isPremium) {
+            autoCheckBadge.textContent = 'FREE';
+            autoCheckBadge.className = 'tool-badge';
+            autoCheckBtn.disabled = false;
+            autoCheckBtn.title = 'Scan board for mistakes (Free for Member)';
+            return;
+        }
+
+        const remaining = Math.max(0, puzzleLimit - autoCheckUsedThisPuzzle);
+        if (remaining <= 0) {
+            autoCheckBadge.textContent = '0';
+            autoCheckBadge.className = 'tool-badge';
+            autoCheckBtn.disabled = true;
+            autoCheckBtn.title = `Auto-Check limit (${puzzleLimit}/puzzle) reached`;
+        } else {
+            autoCheckBadge.textContent = 'AD';
+            autoCheckBadge.className = 'tool-badge tool-badge-ad';
+            autoCheckBtn.disabled = false;
+            autoCheckBtn.title = 'Watch ad to scan board for mistakes';
+        }
+    }
+
+    let isAutoCheckInProgress = false;
+    async function handleAutoCheck() {
+        if (isAutoCheckInProgress || isGameOver || isGameWon || isPaused) return;
+
+        const isEnabled = typeof AdMobService !== 'undefined'
+            ? AdMobService.isFeatureEnabled('auto_check_rewarded_enabled')
+            : true;
+        if (!isEnabled) {
+            showToast('Auto-Check is currently disabled.');
+            return;
+        }
+
+        const puzzleLimit = typeof AdMobService !== 'undefined'
+            ? Number(AdMobService.getRemoteValue('auto_check_per_puzzle_limit', 1))
+            : 1;
+
+        if (!window.isPremium && autoCheckUsedThisPuzzle >= puzzleLimit) {
+            showToast(`Auto-Check limit (${puzzleLimit}/puzzle) reached for this game.`);
+            return;
+        }
+
+        const boardEl = document.getElementById('sudoku-board');
+        if (!boardEl || !solvedGrid || solvedGrid.length < 81) return;
+
+        // Check if there are user inputs on the board to scan
+        const userCells = Array.from(boardEl.querySelectorAll('.cell.user-input')).filter(c => c.textContent && !c.querySelector('.notes-grid'));
+        if (userCells.length === 0) {
+            showToast('Enter at least one number before scanning.');
+            return;
+        }
+
+        trackEvent('auto_check_tapped', { difficulty: selectedDifficulty });
+
+        let confirmed = true;
+        if (!window.isPremium) {
+            confirmed = await showRewardAdModal({
+                icon: "fact_check",
+                title: "Scan Mistakes",
+                message: "Watch a short sponsor clip to scan your board and highlight incorrect entries.",
+                confirmText: "Watch Ad & Scan",
+                cancelText: "Cancel"
+            });
+        }
+
+        if (!confirmed) {
+            trackEvent('auto_check_cancelled', { difficulty: selectedDifficulty });
+            return;
+        }
+
+        isAutoCheckInProgress = true;
+        if (autoCheckBtn) autoCheckBtn.disabled = true;
+
+        let rewardGranted = false;
+        try {
+            if (window.isPremium) {
+                rewardGranted = true;
+            } else if (typeof AdMobService !== 'undefined') {
+                trackEvent('auto_check_ad_started', { difficulty: selectedDifficulty });
+                rewardGranted = await AdMobService.showAutoCheckRewardedAd();
+            } else {
+                rewardGranted = true;
+            }
+
+            if (rewardGranted) {
+                autoCheckUsedThisPuzzle++;
+                updateAutoCheckUI();
+
+                // Scan entered user cells against solvedGrid
+                clearAutoCheckHighlights();
+                let mistakeCount = 0;
+                let correctCount = 0;
+
+                userCells.forEach(cell => {
+                    const idx = parseInt(cell.dataset.index, 10);
+                    if (isNaN(idx)) return;
+                    const enteredVal = cell.textContent.trim();
+                    const correctVal = solvedGrid[idx].toString();
+                    if (enteredVal !== correctVal) {
+                        mistakeCount++;
+                        cell.classList.add('auto-check-error');
+                    } else {
+                        correctCount++;
+                        cell.classList.add('auto-check-correct');
+                    }
+                });
+
+                trackEvent('auto_check_reward_earned', { difficulty: selectedDifficulty });
+                trackEvent('auto_check_completed', {
+                    difficulty: selectedDifficulty,
+                    mistakes_found: mistakeCount,
+                    correct_found: correctCount
+                });
+
+                if (mistakeCount > 0) {
+                    HapticEngine.warning();
+                    showToast(`Scan complete: ${mistakeCount} incorrect entry highlighted.`);
+                } else {
+                    HapticEngine.medium();
+                    showToast('Scan complete: All entered numbers are correct!');
+                }
+
+                // Clear highlights automatically after 4.5s
+                autoCheckClearTimeoutId = setTimeout(() => {
+                    clearAutoCheckHighlights();
+                }, 4500);
+            } else {
+                trackEvent('auto_check_failed', { difficulty: selectedDifficulty });
+                showToast('Advertisement not completed. Board was not scanned.');
+            }
+        } catch (e) {
+            console.error('[AutoCheck] Error during scan flow:', e);
+            trackEvent('auto_check_failed', { difficulty: selectedDifficulty, error: String(e) });
+            showToast('Scan could not be performed. Please try again.');
+        } finally {
+            isAutoCheckInProgress = false;
+            updateAutoCheckUI();
+        }
+    }
     
     // --- Sudoku Generation & State ---
     
@@ -1847,15 +3685,24 @@ const wantsAd = await showRewardAdModal({
         // Reset per-game tracking
         isDailyChallenge = !!dailyData;
         hintsUsedThisGame = 0;
-mistakesThisGame = 0;
-mistakeRescueUsedThisGame = false;
-isMistakeRescueRequestInProgress = false;
+        mistakesThisGame = 0;
+        mistakeRescueUsedThisGame = false;
+        isMistakeRescueRequestInProgress = false;
+        autoCheckUsedThisPuzzle = 0;
+        completedGroupsTracker.clear();
+        clearAutoCheckHighlights();
+        updateAutoCheckUI();
+
+        // Proactively preload Rewarded ad so Hints / Mistake Rescue show with 0ms latency
+        if (typeof AdMobService !== 'undefined') {
+            AdMobService.preloadRewardedAd();
+        }
 
         // Clear pause state
         if (isPaused) {
             isPaused = false;
             gameScreen.classList.remove('paused');
-            if (gamePauseBtn) gamePauseBtn.textContent = '⏸';
+            updatePauseBtnUI(false);
             if (pauseModal) pauseModal.classList.add('hidden');
         }
 
@@ -1936,6 +3783,13 @@ updateHintUI();
             }
 
             startTimer();
+            trackEvent('new_game_started', {
+                difficulty: selectedDifficulty,
+                is_daily_challenge: isDailyChallenge,
+                source: dailyData ? 'daily' : 'manual',
+                hints_remaining: hintsRemaining,
+                mistakes_allowed: MAX_MISTAKES
+            });
         };
 
         if (dailyData) {
@@ -2482,10 +4336,12 @@ updateHintUI();
                 mistakes,
                 undosRemaining,
                 hintsRemaining,
+                autoCheckUsedThisPuzzle,
                 secondsElapsed,
                 currentLevel,
                 selectedDifficulty,
                 isDailyChallenge,
+                activeDailyChallengeDateKey,
                 hintsUsedThisGame,
                 mistakesThisGame,
                 timestamp: Date.now()
@@ -2517,17 +4373,27 @@ updateHintUI();
 
     function restoreGame(savedState) {
         const cells = Array.from(board.children);
+        completedGroupsTracker.clear();
 
         // Restore solved grid
         solvedGrid = savedState.solvedGrid || [];
         mistakes = savedState.mistakes || 0;
         undosRemaining = savedState.undosRemaining != null ? savedState.undosRemaining : MAX_UNDOS;
         hintsRemaining = savedState.hintsRemaining != null ? savedState.hintsRemaining : MAX_HINTS;
+        autoCheckUsedThisPuzzle = savedState.autoCheckUsedThisPuzzle || 0;
+        updateAutoCheckUI();
         secondsElapsed = savedState.secondsElapsed || 0;
         currentLevel = savedState.currentLevel || currentLevel;
         isDailyChallenge = savedState.isDailyChallenge || false;
+        activeDailyChallengeDateKey = savedState.activeDailyChallengeDateKey || null;
         hintsUsedThisGame = savedState.hintsUsedThisGame || 0;
         mistakesThisGame = savedState.mistakesThisGame || 0;
+        mistakeRescueUsedThisGame = false;
+        isMistakeRescueRequestInProgress = false;
+
+        if (typeof AdMobService !== 'undefined') {
+            AdMobService.preloadRewardedAd();
+        }
         undoStack = [];
 
         // Restore difficulty selection
@@ -2590,48 +4456,134 @@ updateHintUI();
     // ═══════════════════════════════════════════════
     //  HOME SCREEN BUTTON BINDINGS
     // ═══════════════════════════════════════════════
+    let isAbandonNavigationInProgress = false;
     async function goHomeFromActiveGameWithAd() {
-    const wasPausedBeforePrompt = isPaused;
+        if (isAbandonNavigationInProgress) return;
+        isAbandonNavigationInProgress = true;
 
-    if (wasPausedBeforePrompt && pauseModal) {
-        pauseModal.classList.add('hidden');
-    }
+        try {
+            const wasPausedBeforePrompt = isPaused;
 
-    const shouldLeave = await showRewardAdModal({
-        icon: "🏠",
-        title: "Go to Home?",
-        message: "Your puzzle progress will be saved before leaving.",
-        confirmText: "Go Home",
-        cancelText: "Keep Playing"
-    });
+            if (wasPausedBeforePrompt && pauseModal) {
+                pauseModal.classList.remove('has-native-ad');
+                pauseModal.classList.add('hidden');
+                if (typeof AdMobService !== 'undefined') {
+                    AdMobService.hideNativeAd();
+                }
+            }
 
-    if (!shouldLeave) {
-        if (wasPausedBeforePrompt && pauseModal) {
-            pauseModal.classList.remove('hidden');
+            const shouldLeave = await showRewardAdModal({
+                icon: "🏠",
+                title: "Go to Home?",
+                message: "Your puzzle progress will be saved before leaving.",
+                confirmText: "Go Home",
+                cancelText: "Keep Playing"
+            });
+
+            if (!shouldLeave) {
+                if (wasPausedBeforePrompt && pauseModal) {
+                    const isNativePauseEligible = !window.isPremium && typeof AdMobService !== 'undefined' && AdMobService.isFeatureEnabled('pause_native_ad_enabled');
+                    if (isNativePauseEligible) {
+                        pauseModal.classList.add('has-native-ad');
+                    }
+                    pauseModal.classList.remove('hidden');
+                    if (typeof AdMobService !== 'undefined') {
+                        AdMobService.showNativeAd('pause');
+                    }
+                }
+                return;
+            }
+
+            saveGameState();
+
+            if (typeof AdMobService !== "undefined") {
+                await AdMobService.showAbandonInterstitialAd();
+            }
+
+            if (isPaused) {
+                isPaused = false;
+                gameScreen.classList.remove('paused');
+                updatePauseBtnUI(false);
+                if (pauseModal) pauseModal.classList.add('hidden');
+            }
+
+            stopTimer();
+            showView('home');
+        } finally {
+            isAbandonNavigationInProgress = false;
         }
-        return;
     }
-
-    saveGameState();
-
-    if (typeof AdMobService !== "undefined") {
-        await AdMobService.showAbandonInterstitialAd();
-    }
-
-    if (isPaused) {
-        isPaused = false;
-        gameScreen.classList.remove('paused');
-        if (gamePauseBtn) gamePauseBtn.textContent = '⏸';
-        if (pauseModal) pauseModal.classList.add('hidden');
-    }
-
-    stopTimer();
-    showView('home');
-}
     function updateContinueButton() {
-        if (!continueGameBtn) return;
-        const saved = hasSavedGame();
-        continueGameBtn.disabled = !saved;
+        const saved = loadSavedGame();
+        const heroCard = document.getElementById('home-hero-card');
+        const heroActive = document.getElementById('home-hero-active');
+        const heroEmpty = document.getElementById('home-hero-empty');
+        const streakEl = document.getElementById('home-streak-count');
+
+        // Update header streak counter
+        if (streakEl) {
+            const currentStreak = (typeof StatsEngine !== 'undefined' && StatsEngine.stats && StatsEngine.stats.currentStreak) 
+                ? StatsEngine.stats.currentStreak 
+                : 0;
+            streakEl.textContent = currentStreak;
+        }
+
+        // Update daily challenge streak badge text
+        const dailyStreakSafeBadge = document.getElementById('daily-streak-badge-text');
+        if (dailyStreakSafeBadge) {
+            const streak = (typeof DailyChallengeEngine !== 'undefined' && typeof DailyChallengeEngine.getStreak === 'function')
+                ? DailyChallengeEngine.getStreak()
+                : ((typeof StatsEngine !== 'undefined' && StatsEngine.stats) ? StatsEngine.stats.currentStreak : 0);
+            dailyStreakSafeBadge.textContent = streak > 0 ? `${streak}-Day Streak` : 'Daily Puzzle';
+        }
+
+        let hasActiveGame = false;
+        if (saved && Array.isArray(saved.cellStates) && saved.cellStates.length === 81) {
+            hasActiveGame = true;
+
+            // Player-target cells exclude original prefilled Sudoku clues
+            const playerCells = saved.cellStates.filter(c => !c.prefilled);
+            const totalPlayerCells = playerCells.length > 0 ? playerCells.length : 81;
+
+            // Count player-completed cells (non-prefilled with non-empty value)
+            const completedPlayerCells = playerCells.filter(c => c && c.value && String(c.value).trim() !== '' && String(c.value) !== '0').length;
+            const pct = Math.min(100, Math.round((completedPlayerCells / totalPlayerCells) * 100));
+
+            const minutes = Math.floor((saved.secondsElapsed || 0) / 60);
+            const seconds = (saved.secondsElapsed || 0) % 60;
+            const timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            const diffCapitalized = (saved.selectedDifficulty || 'medium').charAt(0).toUpperCase() + (saved.selectedDifficulty || 'medium').slice(1);
+
+            const heroStatusBadge = document.getElementById('hero-status-badge');
+            if (heroStatusBadge) heroStatusBadge.textContent = `${diffCapitalized} • In Progress`;
+
+            const heroProgressPct = document.getElementById('hero-progress-pct');
+            if (heroProgressPct) heroProgressPct.textContent = `${completedPlayerCells} of ${totalPlayerCells} solved (${pct}%)`;
+
+            const heroProgressBar = document.getElementById('hero-progress-bar');
+            if (heroProgressBar) heroProgressBar.style.width = `${pct}%`;
+
+            const heroStatTimer = document.getElementById('hero-stat-timer');
+            if (heroStatTimer) heroStatTimer.textContent = timeStr;
+
+            const heroStatMistakes = document.getElementById('hero-stat-mistakes');
+            if (heroStatMistakes) heroStatMistakes.textContent = `${saved.mistakes || 0} / 3`;
+
+            const heroStatLevel = document.getElementById('hero-stat-level');
+            if (heroStatLevel) heroStatLevel.textContent = `Level ${saved.currentLevel || 1}`;
+        }
+
+        if (hasActiveGame) {
+            if (heroCard) heroCard.classList.remove('hidden');
+            if (heroActive) heroActive.classList.remove('hidden');
+            if (heroEmpty) heroEmpty.classList.add('hidden');
+            if (continueGameBtn) continueGameBtn.disabled = false;
+        } else {
+            if (heroCard) heroCard.classList.add('hidden');
+            if (heroActive) heroActive.classList.add('hidden');
+            if (heroEmpty) heroEmpty.classList.remove('hidden');
+            if (continueGameBtn) continueGameBtn.disabled = true;
+        }
     }
 
     // Continue Game
@@ -2665,12 +4617,17 @@ updateHintUI();
         pauseResumeBtn.addEventListener('click', () => resumeGame());
     }
 
+    // Pause modal — Close button (resumes game)
+    if (pauseCloseBtn) {
+        pauseCloseBtn.addEventListener('click', () => resumeGame());
+    }
+
     // Pause modal — Go to Home
     if (pauseHomeBtn) {
-    pauseHomeBtn.addEventListener('click', () => {
-        goHomeFromActiveGameWithAd();
-    });
-}
+        pauseHomeBtn.addEventListener('click', () => {
+            goHomeFromActiveGameWithAd();
+        });
+    }
 
     // Home Back Button (game screen → home)
     if (homeBackBtn) {
@@ -2687,71 +4644,158 @@ updateHintUI();
     if (dailyChallengeBtn) {
         dailyChallengeBtn.addEventListener('click', () => {
             DailyChallengeEngine.openModal();
+            if (typeof AdMobService !== 'undefined') AdMobService.showNativeAd('daily_challenge');
+        });
+    }
+
+    const calPrevBtn = document.getElementById('cal-prev-btn');
+    const calNextBtn = document.getElementById('cal-next-btn');
+
+    if (calPrevBtn) {
+        calPrevBtn.addEventListener('click', () => {
+            DailyChallengeEngine.navigateMonth(-1);
+        });
+    }
+
+    if (calNextBtn) {
+        calNextBtn.addEventListener('click', () => {
+            DailyChallengeEngine.navigateMonth(1);
         });
     }
 
     if (closeDailyBtn) {
         closeDailyBtn.addEventListener('click', () => {
             if (dailyChallengeModal) dailyChallengeModal.classList.add('hidden');
+            if (typeof AdMobService !== 'undefined') AdMobService.hideNativeAd();
+            if (!homeScreen.classList.contains('hidden-view') && typeof AdMobService !== 'undefined') {
+                AdMobService.showNativeAd('home');
+            }
         });
     }
 
     if (dailyPlayBtn) {
-    dailyPlayBtn.addEventListener('click', async () => {
-        if (dailyPlayBtn.disabled) return;
+        dailyPlayBtn.addEventListener('click', async () => {
+            if (dailyPlayBtn.disabled) return;
 
-        const saved = loadSavedGame();
+            const targetDateKey = DailyChallengeEngine.selectedDateKey || DailyChallengeEngine.todayKey();
+            const isCompleted = DailyChallengeEngine.isCompleted(targetDateKey);
 
-        if (saved && !saved.isDailyChallenge) {
-            const shouldContinue = await showRewardAdModal({
-                icon: "📅",
-                title: "Start Daily Challenge?",
-                message: "Your current puzzle progress will be saved before starting the Daily Challenge.",
-                confirmText: "Continue",
-                cancelText: "Cancel"
-            });
+            // Guard against duplicate taps
+            dailyPlayBtn.disabled = true;
 
-            if (!shouldContinue) return;
+            try {
+                console.log(`[DailyAd] Play Now tapped. Selected date: ${targetDateKey}, isCompleted: ${isCompleted}, isPremium: ${!!window.isPremium}`);
 
-            saveGameState();
-        }
+                // If the user already has a saved in-progress regular game, preserve it silently
+                const saved = loadSavedGame();
+                if (saved && !saved.isDailyChallenge) {
+                    saveGameState();
+                }
 
-        const wantsAd = await showRewardAdModal({
-            icon: "🎯",
-            title: "Unlock Daily Challenge",
-            message: "Watch a short ad to play today's special Sudoku challenge.",
-            confirmText: "Watch Ad",
-            cancelText: "Not Now"
+                // If user is premium or already completed this date: free to play immediately without ad
+                if (window.isPremium || isCompleted) {
+                    console.log(`[DailyAd] Bypassing ad (isPremium=${!!window.isPremium}, isCompleted=${isCompleted})`);
+                    if (dailyChallengeModal) dailyChallengeModal.classList.add('hidden');
+                    if (typeof AdMobService !== 'undefined') AdMobService.hideNativeAd();
+
+                    activeDailyChallengeDateKey = targetDateKey;
+                    const dailyData = DailyChallengeEngine.generateForDate(targetDateKey);
+                    startNewGame(dailyData);
+                    saveGameState();
+                    showView('game');
+                    return;
+                }
+
+                // Free user on uncompleted challenge:
+                // Hide native ad while rewarded ad loading overlay and ad run
+                if (typeof AdMobService !== 'undefined') AdMobService.hideNativeAd();
+
+                // 1. Show ad preparation overlay IMMEDIATELY
+                if (typeof AdMobService !== 'undefined') {
+                    await AdMobService.showAdLoadingOverlay({
+                        icon: "event",
+                        title: "Preparing Advertisement",
+                        message: "Preparing today's challenge advertisement."
+                    });
+                }
+
+                // 2. Launch rewarded advertisement
+                let adResult = { success: false, reason: 'uninitialized' };
+                if (typeof AdMobService !== 'undefined') {
+                    const rawResult = await AdMobService.showDailyChallengeRewardedAd();
+                    if (typeof rawResult === 'boolean') {
+                        adResult = { success: rawResult, reason: rawResult ? 'reward_earned' : 'failed' };
+                    } else if (rawResult && typeof rawResult === 'object') {
+                        adResult = rawResult;
+                    }
+                }
+
+                console.log("[DailyAd] Ad execution result:", adResult);
+
+                // 3. Branch on outcome with distinct user feedback
+                if (adResult.success) {
+                    // Confirmed reward: start selected puzzle
+                    console.log("[DailyAd] Confirmed reward. Starting Daily Challenge puzzle for:", targetDateKey);
+                    if (dailyChallengeModal) dailyChallengeModal.classList.add('hidden');
+                    activeDailyChallengeDateKey = targetDateKey;
+                    const dailyData = DailyChallengeEngine.generateForDate(targetDateKey);
+                    startNewGame(dailyData);
+                    saveGameState();
+                    showView('game');
+                } else {
+                    // Re-show native ad if applicable
+                    if (typeof AdMobService !== 'undefined') {
+                        AdMobService.hideAdLoadingOverlay();
+                        AdMobService.showNativeAd('daily_challenge');
+                    }
+
+                    const statusLabel = document.getElementById('cal-selected-status');
+
+                    if (adResult.reason === 'user_cancelled_before_reward') {
+                        console.log("[DailyAd] Ad dismissed before reward completion");
+                        if (statusLabel) {
+                            statusLabel.textContent = "Ad was not completed • Tap Play Now to retry";
+                        }
+                        showToast("Watch the full ad to unlock the challenge.");
+                    } else if (adResult.reason === 'failed_to_load' || adResult.reason === 'failed_to_show' || adResult.reason === 'missing_ad_unit_id') {
+                        console.warn("[DailyAd] Ad unavailable (load/show failure):", adResult.reason);
+                        if (statusLabel) {
+                            statusLabel.textContent = "Advertisement unavailable • Tap Play Now to retry";
+                        }
+                        showToast("Advertisement unavailable. Please check your connection and try again.");
+                    } else if (adResult.reason === 'disabled_by_remote_config') {
+                        console.log("[DailyAd] Rewarded ad disabled by Remote Config. Granting free entry.");
+                        if (dailyChallengeModal) dailyChallengeModal.classList.add('hidden');
+                        activeDailyChallengeDateKey = targetDateKey;
+                        const dailyData = DailyChallengeEngine.generateForDate(targetDateKey);
+                        startNewGame(dailyData);
+                        saveGameState();
+                        showView('game');
+                        return;
+                    } else {
+                        console.warn("[DailyAd] Ad not completed. Reason:", adResult.reason);
+                        if (statusLabel) {
+                            statusLabel.textContent = "Could not load ad • Tap Play Now to retry";
+                        }
+                        showToast("Could not load advertisement. Please try again.");
+                    }
+                }
+            } catch (err) {
+                console.error("[DailyAd] Daily Challenge Play Now unexpected error:", err);
+                if (typeof AdMobService !== 'undefined') {
+                    AdMobService.hideAdLoadingOverlay();
+                    AdMobService.showNativeAd('daily_challenge');
+                }
+                const statusLabel = document.getElementById('cal-selected-status');
+                if (statusLabel) {
+                    statusLabel.textContent = "Error preparing ad • Tap Play Now to retry";
+                }
+                showToast("Could not prepare advertisement. Please try again.");
+            } finally {
+                dailyPlayBtn.disabled = false;
+            }
         });
-
-        if (!wantsAd) return;
-
-        if (typeof AdMobService === "undefined") {
-            console.warn("Daily Challenge Rewarded unavailable: AdMobService is not loaded.");
-            return;
-        }
-
-        dailyPlayBtn.disabled = true;
-
-        const rewardEarned = await AdMobService.showDailyChallengeRewardedAd();
-
-        dailyPlayBtn.disabled = false;
-
-        if (!rewardEarned) {
-            console.log("Daily Challenge not started: reward was not earned.");
-            return;
-        }
-
-        if (dailyChallengeModal) dailyChallengeModal.classList.add('hidden');
-
-        const todayKey = DailyChallengeEngine.todayKey();
-        const dailyData = DailyChallengeEngine.generateForDate(todayKey);
-
-        startNewGame(dailyData);
-        saveGameState();
-        showView('game');
-    });
-}
+    }
 
     // Home Stats → open existing stats modal
     if (homeStatsBtn) {
@@ -2768,19 +4812,86 @@ updateHintUI();
     if (achievementsBtn) {
         achievementsBtn.addEventListener('click', () => {
             AchievementsEngine.openModal();
+            if (typeof AdMobService !== 'undefined') AdMobService.showNativeAd('achievements');
         });
     }
 
     if (closeAchievementsBtn) {
         closeAchievementsBtn.addEventListener('click', () => {
             if (achievementsModal) achievementsModal.classList.add('hidden');
+            if (typeof AdMobService !== 'undefined') AdMobService.hideNativeAd();
+            if (!homeScreen.classList.contains('hidden-view') && typeof AdMobService !== 'undefined') {
+                AdMobService.showNativeAd('home');
+            }
+            if (typeof ReviewPromptManager !== 'undefined' && ReviewPromptManager._newAchievementsThisSession) {
+                ReviewPromptManager._newAchievementsThisSession = false;
+                ReviewPromptManager.triggerIfEligible('achievement_unlocked');
+            }
+        });
+    }
+
+    // Settings manual Rate & Share entries
+    const settingsRateBtn = document.getElementById('settings-rate-btn');
+    if (settingsRateBtn) {
+        settingsRateBtn.addEventListener('click', () => {
+            if (typeof ReviewPromptManager !== 'undefined') {
+                ReviewPromptManager.openManualStoreRating('settings');
+            }
+        });
+    }
+
+    const settingsShareBtn = document.getElementById('settings-share-btn');
+    if (settingsShareBtn) {
+        settingsShareBtn.addEventListener('click', () => {
+            if (typeof ReviewPromptManager !== 'undefined') {
+                ReviewPromptManager.openManualShare();
+            }
+        });
+    }
+
+    // Home subtle Rate entry
+    const homeRateBtn = document.getElementById('home-rate-btn');
+    if (homeRateBtn) {
+        homeRateBtn.addEventListener('click', () => {
+            if (typeof ReviewPromptManager !== 'undefined') {
+                ReviewPromptManager.openManualStoreRating('home');
+            }
         });
     }
 
     // Home Settings → open existing settings modal
     if (homeSettingsBtn) {
         homeSettingsBtn.addEventListener('click', () => {
+            ThemeEngine.updateSettingsUI();
             if (settingsModal) settingsModal.classList.remove('hidden');
+            if (typeof AdMobService !== 'undefined') AdMobService.hideNativeAd();
+        });
+    }
+
+    // Home Profile Button → open stats modal
+    const homeProfileBtn = document.getElementById('home-profile-btn');
+    if (homeProfileBtn) {
+        homeProfileBtn.addEventListener('click', () => {
+            StatsEngine.updateUI();
+            if (statsModal) statsModal.classList.remove('hidden');
+        });
+    }
+
+    // Home Bottom Navigation Tabs
+    const navTabHome = document.getElementById('nav-tab-home');
+    if (navTabHome) {
+        navTabHome.addEventListener('click', () => {
+            if (homeScreen) {
+                homeScreen.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        });
+    }
+
+    const navTabDaily = document.getElementById('nav-tab-daily');
+    if (navTabDaily) {
+        navTabDaily.addEventListener('click', () => {
+            DailyChallengeEngine.openModal();
+            if (typeof AdMobService !== 'undefined') AdMobService.showNativeAd('daily_challenge');
         });
     }
 
@@ -2789,40 +4900,187 @@ updateHintUI();
     // ═══════════════════════════════════════════════
 
     // Initialize UI state (but do NOT auto-start a game)
+    ThemeEngine.init();
     updateLevelUI();
     updateUndoUI();
     updateHintUI();
+    updateAutoCheckUI();
     updateContinueButton();
 
-    // Show home screen as initial view
-    showView('home');
+    // Android hardware Back Button listener
+    try {
+        const handleHardwareBack = () => {
+            if (typeof window.UpdateManager !== 'undefined' && window.UpdateManager.isMandatoryUpdateActive()) {
+                console.log("[BackNavigation] Ignored: mandatory update active");
+                return;
+            }
+            if (isPaused && pauseModal && !pauseModal.classList.contains('hidden')) {
+                console.log("[BackNavigation] triggered (pause modal)");
+                resumeGame();
+                return;
+            }
+            if (settingsModal && !settingsModal.classList.contains('hidden')) {
+                console.log("[BackNavigation] triggered (settings modal)");
+                settingsModal.classList.add('hidden');
+                if (!homeScreen.classList.contains('hidden-view') && typeof AdMobService !== 'undefined') {
+                    AdMobService.showNativeAd('home');
+                }
+                return;
+            }
+            if (statsModal && !statsModal.classList.contains('hidden')) {
+                console.log("[BackNavigation] triggered (stats modal)");
+                statsModal.classList.add('hidden');
+                return;
+            }
+            if (achievementsModal && !achievementsModal.classList.contains('hidden')) {
+                console.log("[BackNavigation] triggered (achievements modal)");
+                achievementsModal.classList.add('hidden');
+                if (typeof AdMobService !== 'undefined') AdMobService.hideNativeAd();
+                if (!homeScreen.classList.contains('hidden-view') && typeof AdMobService !== 'undefined') {
+                    AdMobService.showNativeAd('home');
+                }
+                if (typeof ReviewPromptManager !== 'undefined' && ReviewPromptManager._newAchievementsThisSession) {
+                    ReviewPromptManager._newAchievementsThisSession = false;
+                    ReviewPromptManager.triggerIfEligible('achievement_unlocked');
+                }
+                return;
+            }
+            if (dailyChallengeModal && !dailyChallengeModal.classList.contains('hidden')) {
+                console.log("[BackNavigation] triggered (daily challenge modal)");
+                if (typeof DailyChallengeEngine !== 'undefined') DailyChallengeEngine.closeModal();
+                if (typeof AdMobService !== 'undefined') AdMobService.hideNativeAd();
+                if (!homeScreen.classList.contains('hidden-view') && typeof AdMobService !== 'undefined') {
+                    AdMobService.showNativeAd('home');
+                }
+                return;
+            }
+            if (victoryModal && !victoryModal.classList.contains('hidden')) {
+                console.log("[BackNavigation] triggered (victory modal)");
+                victoryModal.classList.add('hidden');
+                showView('home');
+                return;
+            }
+            if (!gameScreen.classList.contains('hidden-view')) {
+                console.log("[BackNavigation] triggered (gameplay to home)");
+                goHomeFromActiveGameWithAd();
+                return;
+            }
+        };
 
-    // Auto-launch tutorial on first visit (will show over home screen)
-    if (!localStorage.getItem('sudoku-tutorial-seen')) {
-        showTutorial();
-        localStorage.setItem('sudoku-tutorial-seen', 'true');
+        const CapApp = window.Capacitor && window.Capacitor.Plugins ? window.Capacitor.Plugins.App : null;
+        if (CapApp && typeof CapApp.addListener === 'function') {
+            CapApp.addListener('backButton', handleHardwareBack);
+        }
+        document.addEventListener('backbutton', handleHardwareBack);
+    } catch (e) {
+        console.warn('Back button listener registration error:', e);
     }
 
-    // Web Splash Screen Logic
+    // Coordinated Splash Screen & Home Transition
     const webSplashScreen = document.getElementById('web-splash-screen');
     const phase1 = document.getElementById('splash-phase-1');
     const phase2 = document.getElementById('splash-phase-2');
-    
+
+    let hasRevealedHome = false;
+    const revealHomeScreen = () => {
+        if (hasRevealedHome) return;
+        if (UpdateManager.isMandatoryUpdateActive()) {
+            console.log("[Startup] Home reveal blocked by mandatory update.");
+            return;
+        }
+        hasRevealedHome = true;
+
+        if (webSplashScreen) {
+            webSplashScreen.classList.add('fade-out');
+            setTimeout(() => {
+                webSplashScreen.style.display = 'none';
+            }, 500);
+        }
+
+        console.log("[Startup] home_view_ready");
+        console.log("[Startup] initial_ad_request");
+        showView('home');
+        trackEvent('app_web_started');
+
+        // Check for flexible update on Home reveal
+        UpdateManager.checkStartupUpdate().catch(() => {});
+
+        // Auto-launch tutorial on first visit (only after consent has been accepted)
+        if (localStorage.getItem('sudoku-consent-accepted') && !localStorage.getItem('sudoku-tutorial-seen')) {
+            showTutorial();
+            localStorage.setItem('sudoku-tutorial-seen', 'true');
+        }
+    };
+
     if (webSplashScreen && phase1 && phase2) {
-        // Phase 1 (Studio Intro) lasts for 2 seconds
+        // Optimized splash timing: returning sessions feel snappy (~1.5s), first launches keep full branding
+        const isReturningSession = !!(
+            localStorage.getItem('sudoku-consent-accepted') ||
+            (typeof ReviewPromptManager !== 'undefined' && ReviewPromptManager.getState().sessionCount > 1)
+        );
+
+        const phase1Duration = isReturningSession ? 750 : 1400;
+        const appOpenWaitMs = isReturningSession ? 1200 : 2200;
+        const phase2FallbackHoldMs = isReturningSession ? 750 : 1500;
+
         setTimeout(() => {
             phase1.classList.add('fade-out');
-            phase2.classList.add('active'); // Triggers Phase 2 and progress bar animation
-            
-            // Phase 2 (Game Intro + Progress Bar) lasts for 3.5 seconds
-            setTimeout(() => {
-                webSplashScreen.classList.add('fade-out');
-                
-                // Remove from DOM after overall fade transition completes
+            phase2.classList.add('active'); // Triggers Phase 2
+
+            (async () => {
+                // Priority 1: Check mandatory update before any ads or home initialization
+                const updateDecision = await UpdateManager.checkStartupUpdate();
+                if (updateDecision && updateDecision.isMandatory) {
+                    console.log("[Startup] Normal startup halted by mandatory update.");
+                    if (webSplashScreen) {
+                        webSplashScreen.classList.add('fade-out');
+                        setTimeout(() => { webSplashScreen.style.display = 'none'; }, 500);
+                    }
+                    return;
+                }
+
+                if (!window.isPremium && typeof AdMobService !== 'undefined' && AdMobService.isFeatureEnabled('app_open_ads_enabled')) {
+                    // Check if App Open is ready within the startup window
+                    const isReady = await AdMobService.waitForAppOpenAvailable(appOpenWaitMs, 150);
+                    if (isReady && !hasRevealedHome && !window.isPremium) {
+                        console.log("[AppOpen] ready");
+                        console.log("[AppOpen] shown");
+                        
+                        const AppOpenAd = AdMobService.getAppOpenAdPlugin();
+                        let dismissListener = null;
+                        if (AppOpenAd && AppOpenAd.addListener) {
+                            dismissListener = await AppOpenAd.addListener("appOpenDismissed", () => {
+                                console.log("[AppOpen] dismissed");
+                                if (dismissListener && dismissListener.remove) dismissListener.remove();
+                                revealHomeScreen();
+                            });
+                        }
+
+                        const shown = await AdMobService.showAppOpenAd({ context: 'cold_start', ignoreGameplayCheck: true });
+                        if (!shown) {
+                            console.log("[AppOpen] skipped reason=show_failed");
+                            revealHomeScreen();
+                        }
+                        return;
+                    } else {
+                        console.log("[AppOpen] skipped reason=not_ready_within_startup_window");
+                    }
+                }
+
+                // If not eligible or not ready, complete splash intro and reveal home cleanly
                 setTimeout(() => {
-                    webSplashScreen.style.display = 'none';
-                }, 500); 
-            }, 3500);
-        }, 2000);
+                    revealHomeScreen();
+                }, phase2FallbackHoldMs);
+            })();
+        }, phase1Duration);
+    } else {
+        (async () => {
+            const updateDecision = await UpdateManager.checkStartupUpdate();
+            if (updateDecision && updateDecision.isMandatory) {
+                console.log("[Startup] Normal startup halted by mandatory update.");
+                return;
+            }
+            revealHomeScreen();
+        })();
     }
 });

@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sudoku Pro - Zen</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Shippori+Mincho&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
 </head>
 <body>
     <!-- Web Splash Screen -->
@@ -36,61 +39,138 @@
     <!-- ═══════════════════════════════════════════ -->
     <div id="home-screen" class="view-screen">
         <div class="home-container">
-
-            <!-- Logo Area -->
-            <div class="home-logo-area">
-                <div class="home-kanji">数独</div>
-                <div class="home-title">SUDOKU PRO</div>
-                <div class="home-tagline">Zen Mind Game</div>
-            </div>
-
-            <!-- Primary Actions -->
-            <div class="home-primary-actions">
-                <button id="continue-game-btn" class="home-btn home-btn-primary" disabled>
-                    <span class="home-btn-icon">▶</span>
-                    Continue Game
-                </button>
-                <button id="new-game-home-btn" class="home-btn home-btn-secondary">
-                    <span class="home-btn-icon">✦</span>
-                    New Game
-                </button>
-            </div>
-
-            <!-- Difficulty Selector -->
-            <div class="home-difficulty-section">
-                <div class="home-section-label">SELECT DIFFICULTY</div>
-                <div class="home-difficulty-chips">
-                    <button id="difficulty-easy-btn" class="diff-chip diff-easy selected" data-difficulty="easy">Easy</button>
-                    <button id="difficulty-medium-btn" class="diff-chip diff-medium" data-difficulty="medium">Medium</button>
-                    <button id="difficulty-hard-btn" class="diff-chip diff-hard" data-difficulty="hard">Hard</button>
+            <!-- Compact Brand Header -->
+            <header class="home-brand-header">
+                <div class="home-brand-title">Sudoku Pro</div>
+                <div id="home-streak-pill" class="home-streak-pill">
+                    <span class="material-symbols-outlined streak-icon" style="font-variation-settings: 'FILL' 1;">local_fire_department</span>
+                    <span id="home-streak-count" class="streak-text">0</span>
                 </div>
-            </div>
+            </header>
 
-            <!-- Secondary Navigation -->
-            <div class="home-secondary-nav">
-                <button id="daily-challenge-btn" class="home-nav-card">
-                    <span class="home-nav-icon">📅</span>
-                    <span class="home-nav-label">Daily Challenge</span>
-                </button>
-                <button id="home-stats-btn" class="home-nav-card">
-                    <span class="home-nav-icon">📊</span>
-                    <span class="home-nav-label">Statistics</span>
-                </button>
-                <button id="achievements-btn" class="home-nav-card">
-                    <span class="home-nav-icon">🏆</span>
-                    <span class="home-nav-label">Achievements</span>
-                </button>
-                <button id="home-settings-btn" class="home-nav-card">
-                    <span class="home-nav-icon">⚙️</span>
-                    <span class="home-nav-label">Settings</span>
-                </button>
-            </div>
+            <!-- Non-blocking Flexible Update Banner -->
+            <section id="home-update-banner" class="home-update-banner hidden">
+                <div class="update-banner-left">
+                    <div class="update-banner-icon-wrap">
+                        <span class="material-symbols-outlined">system_update</span>
+                    </div>
+                    <div class="update-banner-text">
+                        <h3 id="update-banner-title" class="update-banner-title">Update Available</h3>
+                        <p id="update-banner-desc" class="update-banner-desc">A newer Sudoku Pro version is ready.</p>
+                    </div>
+                </div>
+                <div class="update-banner-right">
+                    <button id="home-update-action-btn" class="update-banner-btn primary" type="button">Update</button>
+                    <button id="home-update-later-btn" class="update-banner-btn secondary" type="button" aria-label="Dismiss update for now">Later</button>
+                </div>
+            </section>
 
-            <!-- Footer -->
+            <!-- Continue Game Card (Shown when game is in progress) -->
+            <section id="home-hero-card" class="home-continue-card hidden">
+                <div id="home-hero-active" class="continue-card-inner">
+                    <div class="continue-header-row">
+                        <span id="hero-status-badge" class="continue-badge">Medium • In Progress</span>
+                        <span id="hero-progress-pct" class="continue-pct">0% Solved</span>
+                    </div>
+
+                    <div class="continue-progress-track">
+                        <div id="hero-progress-bar" class="continue-progress-fill" style="width: 0%;"></div>
+                    </div>
+
+                    <div class="continue-stats-row">
+                        <div class="continue-stat-box">
+                            <span class="stat-box-label"><span class="material-symbols-outlined">schedule</span> Time</span>
+                            <span id="hero-stat-timer" class="stat-box-val">00:00</span>
+                        </div>
+                        <div class="continue-stat-box mistake-stat-box">
+                            <span class="stat-box-label"><span class="material-symbols-outlined">flag</span> Mistakes</span>
+                            <span id="hero-stat-mistakes" class="stat-box-val">0 / 3</span>
+                        </div>
+                        <div class="continue-stat-box">
+                            <span class="stat-box-label"><span class="material-symbols-outlined">award_star</span> Level</span>
+                            <span id="hero-stat-level" class="stat-box-val">Level 1</span>
+                        </div>
+                    </div>
+
+                    <button id="continue-game-btn" class="continue-resume-btn" type="button">
+                        <span>Resume Game</span>
+                        <span class="material-symbols-outlined">arrow_forward</span>
+                    </button>
+                </div>
+                <div id="home-hero-empty" class="hidden"></div>
+            </section>
+
+            <!-- New Game Section -->
+            <section class="home-new-game-section">
+                <div class="section-title-row">
+                    <h2 class="home-section-title">New Game</h2>
+                    <span class="home-section-tag">Classic 9×9</span>
+                </div>
+
+                <div class="difficulty-grid">
+                    <button id="difficulty-easy-btn" class="grade-card" data-difficulty="easy" type="button">
+                        <span class="grade-name">Easy</span>
+                        <span class="grade-stars">★☆☆</span>
+                    </button>
+                    <button id="difficulty-medium-btn" class="grade-card selected" data-difficulty="medium" type="button">
+                        <span class="grade-name">Medium</span>
+                        <span class="grade-stars">★★☆</span>
+                    </button>
+                    <button id="difficulty-hard-btn" class="grade-card" data-difficulty="hard" type="button">
+                        <span class="grade-name">Hard</span>
+                        <span class="grade-stars">★★★</span>
+                    </button>
+                </div>
+
+                <button id="new-game-home-btn" class="home-play-btn" type="button">
+                    <span class="material-symbols-outlined">play_arrow</span>
+                    <span>Start New Game</span>
+                </button>
+            </section>
+
+            <!-- Compact Daily Challenge Card -->
+            <section id="daily-challenge-btn" class="home-daily-compact" role="button" tabindex="0">
+                <div class="daily-compact-left">
+                    <div class="daily-compact-icon">
+                        <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">calendar_today</span>
+                    </div>
+                    <div class="daily-compact-info">
+                        <h3 class="daily-compact-title">Daily Challenge</h3>
+                        <p id="daily-streak-badge-text" class="daily-compact-sub">Daily Puzzle</p>
+                    </div>
+                </div>
+                <div class="daily-compact-right">
+                    <span class="daily-play-pill">
+                        <span>Play</span>
+                        <span class="material-symbols-outlined">chevron_right</span>
+                    </span>
+                </div>
+            </section>
+
+            <!-- Compact Shortcuts Section -->
+            <section class="home-shortcuts-section">
+                <button id="home-stats-btn" class="shortcut-card" type="button">
+                    <span class="material-symbols-outlined shortcut-icon">leaderboard</span>
+                    <span class="shortcut-label">Statistics</span>
+                </button>
+                <button id="achievements-btn" class="shortcut-card" type="button">
+                    <span class="material-symbols-outlined shortcut-icon">emoji_events</span>
+                    <span class="shortcut-label">Achievements</span>
+                </button>
+                <button id="home-settings-btn" class="shortcut-card" type="button">
+                    <span class="material-symbols-outlined shortcut-icon">settings</span>
+                    <span class="shortcut-label">Settings</span>
+                </button>
+            </section>
+
+            <!-- Subtle Version Brand Footer -->
             <div class="home-footer">
-                <span class="home-version">Version 1.0.0</span>
+                <button id="home-rate-btn" class="home-rate-pill-btn" type="button">
+                    <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">star</span>
+                    <span>Rate Sudoku Pro</span>
+                </button>
+                <span class="home-version">Sudoku Pro • Classic Edition</span>
             </div>
-
         </div>
     </div>
 
@@ -98,117 +178,355 @@
     <!--  GAME SCREEN                               -->
     <!-- ═══════════════════════════════════════════ -->
     <div id="game-screen" class="view-screen hidden-view">
-        <div class="container relative-container">
-            <header>
-                <!-- Top row: Home | Title | Pause+Stats+Settings -->
-                <div class="header-row">
-                    <div class="header-left">
-                        <button id="home-back-btn" class="icon-btn" title="Back to Home">🏠</button>
-                    </div>
-                    <div class="header-titles">
-                        <h1>数独</h1>
-                        <p class="subtitle">Sudoku Pro</p>
-                    </div>
-                    <div class="header-right">
-                        <button id="game-pause-btn" class="icon-btn" title="Pause">⏸</button>
-                        <button id="mute-btn" class="icon-btn" title="Toggle Sound">🔊</button>
-                        <button id="stats-btn" class="icon-btn" title="Statistics">📊</button>
-                        <button id="settings-btn" class="icon-btn" title="Settings">⚙️</button>
+        <div class="game-container">
+            <!-- Compact Header -->
+            <header class="game-header">
+                <!-- Top Navigation & Action Row -->
+                <div class="game-top-bar">
+                    <button id="home-back-btn" class="game-icon-btn" title="Back to Home" aria-label="Back to Home" type="button">
+                        <span class="material-symbols-outlined">arrow_back</span>
+                    </button>
+                    <span class="game-brand-title">Sudoku Pro</span>
+                    <div class="game-top-actions">
+                        <button id="mute-btn" class="game-icon-btn" title="Toggle Sound" aria-label="Toggle Sound" type="button">
+                            <span class="material-symbols-outlined">volume_up</span>
+                        </button>
+                        <button id="stats-btn" class="game-icon-btn" title="Statistics" aria-label="Statistics" type="button">
+                            <span class="material-symbols-outlined">leaderboard</span>
+                        </button>
+                        <button id="settings-btn" class="game-icon-btn" title="Settings" aria-label="Settings" type="button">
+                            <span class="material-symbols-outlined">settings</span>
+                        </button>
+                        <button id="game-pause-btn" class="game-icon-btn" title="Pause" aria-label="Pause" type="button">
+                            <span class="material-symbols-outlined">pause</span>
+                        </button>
                     </div>
                 </div>
 
-                <!-- Info row: Level | Timer | Mistakes -->
-                <div class="header-stats">
-                    <div class="header-stat-col">
-                        <div id="level-display" class="stat-text">Level 1</div>
+                <!-- Ambient HUD / Status Row -->
+                <div class="game-hud-bar">
+                    <div class="game-hud-left">
+                        <span id="level-display" class="game-level-tag">Level 1</span>
                         <div id="difficulty-badge-row" class="difficulty-badge-row"></div>
                     </div>
-                    <div id="timer" class="timer">00:00</div>
-                    <div id="mistakes" class="mistakes">Mistakes: 0/3</div>
+                    <div class="game-hud-center">
+                        <div class="game-timer-pill">
+                            <span class="material-symbols-outlined timer-icon">schedule</span>
+                            <span id="timer" class="timer">00:00</span>
+                        </div>
+                    </div>
+                    <div class="game-hud-right">
+                        <div class="game-mistakes-pill">
+                            <span class="material-symbols-outlined mistakes-icon">flag</span>
+                            <span id="mistakes" class="mistakes">Mistakes: 0/3</span>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Level progress bar -->
-                <div class="progress-container">
+                <!-- Progress fill container preserved for DOM reference -->
+                <div class="progress-container hidden">
                     <div id="level-progress-fill" class="progress-fill"></div>
                 </div>
             </header>
 
-            <main>
-                <div id="sudoku-board" class="sudoku-board">
-                    <!-- Grid cells will be generated by JavaScript -->
+            <main class="game-main">
+                <!-- 9x9 Sudoku Board Frame -->
+                <div class="sudoku-board-wrapper">
+                    <div id="sudoku-board" class="sudoku-board">
+                        <!-- Grid cells will be generated by JavaScript -->
+                    </div>
                 </div>
 
+                <!-- Number Keypad (1–9) -->
                 <div id="numpad" class="numpad">
                     <!-- Numpad buttons will be generated by JS -->
                 </div>
 
-                <div class="controls">
-                    <button id="erase-btn" class="btn">
-                        <span class="icon">⌫</span> Erase
+                <!-- Compact Tool Controls Area -->
+                <div class="controls game-controls-bar">
+                    <button id="undo-btn" class="game-tool-btn undo-btn" type="button">
+                        <div class="tool-icon-wrapper">
+                            <span class="material-symbols-outlined">undo</span>
+                            <span id="undo-count" class="tool-badge">3</span>
+                        </div>
+                        <span class="tool-label">Undo</span>
                     </button>
-                    <button id="pencil-btn" class="btn">
-                        <span class="icon">✏️</span> Notes
+                    <button id="erase-btn" class="game-tool-btn erase-btn" type="button">
+                        <div class="tool-icon-wrapper">
+                            <span class="material-symbols-outlined">backspace</span>
+                        </div>
+                        <span class="tool-label">Erase</span>
                     </button>
-                    <button id="undo-btn" class="btn undo-btn">
-                        <span class="icon">↺</span> Undo (<span id="undo-count">3</span>)
+                    <button id="pencil-btn" class="game-tool-btn notes-btn" type="button">
+                        <div class="tool-icon-wrapper">
+                            <span class="material-symbols-outlined">edit_note</span>
+                            <span class="notes-indicator-dot"></span>
+                        </div>
+                        <span class="tool-label">Notes</span>
                     </button>
-                    <button id="hint-btn" class="btn hint-btn">
-                        <span class="icon">💡</span> Hint (<span id="hint-count">3</span>)
+                    <button id="hint-btn" class="game-tool-btn hint-btn" type="button">
+                        <div class="tool-icon-wrapper">
+                            <span class="material-symbols-outlined">lightbulb</span>
+                            <span id="hint-count" class="tool-badge">3</span>
+                        </div>
+                        <span class="tool-label">Hint</span>
                     </button>
-                    <button id="new-game-btn" class="btn">New Game</button>
+                    <button id="auto-check-btn" class="game-tool-btn auto-check-btn" type="button" title="Scan Mistakes">
+                        <div class="tool-icon-wrapper">
+                            <span class="material-symbols-outlined">fact_check</span>
+                            <span id="auto-check-badge" class="tool-badge tool-badge-ad">AD</span>
+                        </div>
+                        <span class="tool-label">Auto-Check</span>
+                    </button>
+                    <button id="new-game-btn" class="game-tool-btn new-game-btn" type="button">
+                        <div class="tool-icon-wrapper">
+                            <span class="material-symbols-outlined">restart_alt</span>
+                        </div>
+                        <span class="tool-label">New Game</span>
+                    </button>
                 </div>
             </main>
         </div>
     </div>
 
     <!-- Game Over Modal -->
-<div id="reward-ad-modal" class="modal hidden">
-    <div class="modal-content reward-ad-card">
-        <div id="reward-ad-icon" class="reward-ad-icon">🎁</div>
-        <h2 id="reward-ad-title">Reward Available</h2>
-        <p id="reward-ad-message">Watch a short ad to continue.</p>
+    <!-- Rewarded Ad Modal (Second Chance Rescue & Bonus Hints) -->
+    <div id="reward-ad-modal" class="modal hidden reward-ad-overlay">
+        <div class="modal-content reward-ad-card">
+            <!-- Modal Header / Edition Badge -->
+            <div class="reward-ad-badge-row">
+                <span class="reward-ad-badge">
+                    <span class="material-symbols-outlined">stars</span>
+                    <span>Sudoku Special Opportunity</span>
+                </span>
+                <span class="reward-ad-pill">Available</span>
+            </div>
 
-        <div class="reward-ad-actions">
-            <button id="reward-ad-cancel" class="secondary-btn">Not Now</button>
-            <button id="reward-ad-confirm" class="primary-btn">Watch Ad</button>
-        </div>
-    </div>
-</div>
-    <div id="game-over-modal" class="modal hidden">
-        <div class="modal-content">
-            <h2>Game Over</h2>
-            <p>You made 3 mistakes!</p>
-            <div class="modal-buttons">
-                <button id="try-again-btn" class="btn hint-btn">Try Again</button>
-                <button id="restart-game-btn" class="btn">New Game</button>
+            <!-- Central Crest & Icon -->
+            <div class="reward-ad-icon-wrap">
+                <div class="reward-ad-icon-glow"></div>
+                <div id="reward-ad-icon" class="reward-ad-icon">❤️</div>
+            </div>
+
+            <!-- Headings -->
+            <h2 id="reward-ad-title" class="reward-ad-title">Rescue Available</h2>
+            <p id="reward-ad-message" class="reward-ad-message">Watch an ad to remove 1 mistake and continue this puzzle.</p>
+
+            <!-- Mindful Note -->
+            <div id="reward-ad-note" class="reward-ad-note">
+                <span class="material-symbols-outlined reward-ad-note-icon">bolt</span>
+                <span id="reward-ad-note-text">Instant return to board • 15–30 sec sponsor clip</span>
+            </div>
+
+            <!-- Modal Action Buttons -->
+            <div class="reward-ad-actions">
+                <button id="reward-ad-confirm" class="reward-ad-confirm-btn" type="button">
+                    <span id="reward-ad-confirm-icon" class="material-symbols-outlined">smart_display</span>
+                    <span id="reward-ad-confirm-text">Watch Ad</span>
+                </button>
+                <button id="reward-ad-cancel" class="reward-ad-cancel-btn" type="button">Not Now</button>
             </div>
         </div>
     </div>
 
-    <!-- Pause Modal -->
-    <div id="pause-modal" class="modal hidden">
-        <div class="modal-content pause-content">
-            <h2>Paused</h2>
-            <p>Game is paused. Your progress is safe.</p>
-            <div class="modal-buttons" style="flex-direction: column; gap: 12px; margin-top: 20px;">
-                <button id="pause-resume-btn" class="btn" style="width: 100%;">▶ Resume</button>
-                <button id="pause-home-btn" class="btn hint-btn" style="width: 100%;">🏠 Go to Home</button>
+    <!-- Game Over Modal -->
+    <div id="game-over-modal" class="modal hidden game-over-overlay">
+        <div class="modal-content game-over-content">
+            <!-- Top Edition Status -->
+            <div class="game-over-meta-bar">
+                <span class="game-over-edition-tag">Sudoku Pro Folio</span>
+                <div class="game-over-mistakes-badge">
+                    <span class="material-symbols-outlined">heart_broken</span>
+                    <span>Mistake Limit Reached</span>
+                </div>
+            </div>
+
+            <!-- Broken Pencil / Solvers Misstep Emblem -->
+            <div class="game-over-crest-wrap">
+                <div class="game-over-crest-glow"></div>
+                <div class="game-over-crest-ring">
+                    <div class="game-over-crest-badge">
+                        <span class="material-symbols-outlined game-over-crest-icon">edit_off</span>
+                    </div>
+                </div>
+                <div class="game-over-alert-dot">
+                    <span class="material-symbols-outlined">priority_high</span>
+                </div>
+            </div>
+
+            <!-- Title & Thoughtful Description -->
+            <div class="game-over-header-group">
+                <h2 class="game-over-title">Out of Chances</h2>
+                <p class="game-over-desc">A small misstep in deduction. You marked your third mistake on this puzzle.</p>
+            </div>
+
+            <!-- Mindful Puzzler Note -->
+            <div class="game-over-note-card">
+                <div class="game-over-note-icon-wrap">
+                    <span class="material-symbols-outlined">psychology</span>
+                </div>
+                <div class="game-over-note-text">
+                    <span class="game-over-note-title">Mindful Puzzler Note</span>
+                    <p class="game-over-note-body">Puzzles are opportunities for quiet practice. Restart fresh or begin a new challenge.</p>
+                </div>
+            </div>
+
+            <!-- Primary and Secondary Actions -->
+            <div class="game-over-actions">
+                <button id="try-again-btn" class="game-over-primary-btn" type="button">
+                    <span class="material-symbols-outlined">replay</span>
+                    <span>Try Again (Reset Grid)</span>
+                </button>
+                <button id="restart-game-btn" class="game-over-secondary-btn" type="button">
+                    <span class="material-symbols-outlined">add_box</span>
+                    <span>New Game</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pause Modal (Ivory & Forest Navy Editorial Design) -->
+    <div id="pause-modal" class="modal hidden pause-overlay">
+        <div class="modal-content pause-card">
+            <!-- Ambient Card Glows -->
+            <div class="pause-glow-top"></div>
+            <div class="pause-glow-bottom"></div>
+
+            <!-- Header: Title & Brass Icon -->
+            <div class="pause-header">
+                <div class="pause-title-group">
+                    <div class="pause-icon-badge">
+                        <span class="material-symbols-outlined">pause_circle</span>
+                    </div>
+                    <h2 class="pause-title">Game Paused</h2>
+                </div>
+                <button id="pause-close-btn" class="pause-close-btn" aria-label="Resume Game" type="button">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+
+            <!-- Game Snapshot Metadata Strip -->
+            <div class="pause-snapshot-bar">
+                <div class="pause-diff-badge">
+                    <span class="material-symbols-outlined">auto_graph</span>
+                    <span id="pause-diff-text">Medium</span>
+                </div>
+                <div class="pause-timer-wrap">
+                    <span class="material-symbols-outlined">timer</span>
+                    <span id="pause-timer-text">00:00</span>
+                </div>
+                <div class="pause-mistakes-wrap">
+                    <span class="material-symbols-outlined">favorite</span>
+                    <span id="pause-mistakes-text">0/3</span>
+                </div>
+            </div>
+
+            <!-- Pause Note / Reassurance -->
+            <div class="pause-note-card">
+                <div class="pause-note-icon-wrap">
+                    <span class="material-symbols-outlined">self_improvement</span>
+                </div>
+                <div class="pause-note-text">
+                    <span class="pause-note-title">Mindful Moment</span>
+                    <p class="pause-note-desc">Take a breath. The board is safely frozen and ready whenever you return.</p>
+                </div>
+            </div>
+
+            <!-- Action Controls Stack -->
+            <div class="pause-actions">
+                <!-- 1. Primary CTA: Resume Game -->
+                <button id="pause-resume-btn" class="pause-primary-btn" type="button">
+                    <span class="material-symbols-outlined">play_arrow</span>
+                    <span>Resume Game</span>
+                </button>
+
+                <!-- 2. Ghost / Secondary CTA: Save & Exit to Home -->
+                <button id="pause-home-btn" class="pause-home-btn" type="button">
+                    <span class="material-symbols-outlined">home</span>
+                    <span>Save &amp; Return Home</span>
+                </button>
+            </div>
+
+            <!-- Local save reassurance -->
+            <div class="pause-footer-hint">
+                <span class="material-symbols-outlined">check_circle</span>
+                <span>Your puzzle progress is saved locally on this device.</span>
             </div>
         </div>
     </div>
 
 
 
-    <!-- Tutorial Modal -->
-    <div id="tutorial-modal" class="modal hidden">
-        <div class="modal-content tutorial-content">
-            <h2>How to Play</h2>
-            <p id="tutorial-text">Every row, column, and 3x3 grid must contain the numbers 1 to 9.</p>
+    <!-- Shared Pre-Ad Loading Overlay (Ivory & Forest Navy Editorial) -->
+    <div id="ad-loading-overlay" class="modal hidden ad-loading-overlay">
+        <div class="modal-content ad-loading-card">
+            <!-- Ambient Glow -->
+            <div class="ad-loading-glow"></div>
+
+            <!-- Central Crest & Animated Spinner -->
+            <div class="ad-loading-crest-wrap">
+                <div class="ad-loading-spinner-ring"></div>
+                <div class="ad-loading-crest">
+                    <span id="ad-loading-icon" class="material-symbols-outlined">smart_display</span>
+                </div>
+            </div>
+
+            <!-- Editorial Header & Dynamic Message -->
+            <div class="ad-loading-text-group">
+                <span class="ad-loading-badge">Sponsor Break</span>
+                <h3 id="ad-loading-title" class="ad-loading-title">Preparing Advertisement</h3>
+                <p id="ad-loading-message" class="ad-loading-message">Your next puzzle will begin after the ad.</p>
+            </div>
+
+            <!-- Tactile Spinner Progress Dots -->
+            <div class="ad-loading-dots">
+                <span class="ad-dot dot-1"></span>
+                <span class="ad-dot dot-2"></span>
+                <span class="ad-dot dot-3"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tutorial Modal (Ivory & Forest Navy Editorial) -->
+    <div id="tutorial-modal" class="modal hidden tutorial-overlay">
+        <div class="modal-content tutorial-card">
+            <!-- Modal Header -->
+            <div class="tutorial-header">
+                <div class="tutorial-title-group">
+                    <span class="tutorial-edition-tag">Sudoku Guide</span>
+                    <h2 class="tutorial-title">How to Play</h2>
+                </div>
+                <button id="tutorial-close-btn" class="tutorial-close-btn" aria-label="Close Tutorial" type="button">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+
+            <!-- Instructional Visual Illustration Area -->
+            <div class="tutorial-illustration-wrap">
+                <div id="tutorial-visual" class="tutorial-visual">
+                    <!-- Populated dynamically: mini grid / icon illustration -->
+                </div>
+            </div>
+
+            <!-- Step Title & Description Body -->
+            <div class="tutorial-body">
+                <h3 id="tutorial-step-title" class="tutorial-step-title">The Standard Grid</h3>
+                <p id="tutorial-text" class="tutorial-text">Every row, column, and 3x3 grid must contain the numbers 1 to 9.</p>
+            </div>
+
+            <!-- Footer: Step Dots Indicator and Action Buttons -->
             <div class="tutorial-footer">
-                <span id="tutorial-step-indicator" class="step-indicator">1 / 4</span>
-                <div class="modal-buttons">
-                    <button id="tutorial-skip-btn" class="btn hint-btn">Skip</button>
-                    <button id="tutorial-next-btn" class="btn">Next</button>
+                <div class="tutorial-step-dots" id="tutorial-dots-wrap">
+                    <span class="tut-dot active"></span>
+                    <span class="tut-dot"></span>
+                    <span class="tut-dot"></span>
+                    <span class="tut-dot"></span>
+                </div>
+                <span id="tutorial-step-indicator" class="tutorial-step-indicator">1 of 4</span>
+                <div class="tutorial-actions">
+                    <button id="tutorial-back-btn" class="tutorial-back-btn" type="button">Back</button>
+                    <button id="tutorial-skip-btn" class="tutorial-skip-btn" type="button">Skip</button>
+                    <button id="tutorial-next-btn" class="tutorial-next-btn" type="button">Next</button>
                 </div>
             </div>
         </div>
@@ -217,27 +535,252 @@
     <!-- Settings Modal -->
     <div id="settings-modal" class="modal hidden">
         <div class="modal-content settings-content">
-            <button id="close-settings-btn" class="icon-btn close-btn" title="Close">✖</button>
-            <h2>Settings</h2>
-            <div class="settings-list">
-                <button id="settings-tutorial-btn" class="btn hint-btn settings-list-btn">How to Play</button>
-                <a href="https://appsedifice.com/terms-and-conditions/" class="btn hint-btn settings-list-btn" target="_blank" style="text-decoration: none;">Terms &amp; Conditions</a>
-                <a href="https://appsedifice.com/privacy-policy-2/" class="btn hint-btn settings-list-btn" target="_blank" style="text-decoration: none;">Privacy Policy</a>
-                <button id="settings-ads-btn" class="btn hint-btn settings-list-btn">Remove Ads</button>
-                <a href="mailto:ahmadxalman@gmail.com" class="btn hint-btn settings-list-btn" style="text-decoration: none;">Help/Support</a>
-                <div class="settings-toggle-row">
-                    <span>Night Mode</span>
-                    <label class="switch">
-                        <input type="checkbox" id="night-mode-toggle">
-                        <span class="slider round"></span>
-                    </label>
+            <!-- Modal Header -->
+            <div class="settings-modal-header">
+                <div class="settings-modal-title-group">
+                    <span class="settings-edition-tag">Solver Preferences</span>
+                    <h2 class="settings-modal-title">Settings</h2>
                 </div>
-                <div class="settings-toggle-row">
-                    <span>Haptic Feedback</span>
-                    <label class="switch">
-                        <input type="checkbox" id="haptic-toggle">
-                        <span class="slider round"></span>
-                    </label>
+                <button id="close-settings-btn" class="settings-close-btn" title="Close" aria-label="Close" type="button">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+
+            <!-- Intro Subtitle -->
+            <p class="settings-intro-text">Calibrate display, sensory feedback, membership, and solver guides for thoughtful play.</p>
+
+            <!-- Settings Content Groups -->
+            <div class="settings-list">
+                <!-- Group 1: Solvers Society / Premium Membership Card -->
+                <div class="settings-group">
+                    <div class="settings-group-header">
+                        <span class="material-symbols-outlined settings-group-icon">workspace_premium</span>
+                        <h3 class="settings-group-title">Membership &amp; Ads</h3>
+                    </div>
+                    <div class="settings-card settings-premium-card">
+                        <div class="settings-premium-inner">
+                            <div class="settings-premium-badge-row">
+                                <span class="settings-premium-tag">Fellowship Pass</span>
+                                <span class="material-symbols-outlined settings-premium-star">stars</span>
+                            </div>
+                            <h4 class="settings-premium-headline">Sudoku Pro Member</h4>
+                            <p class="settings-premium-desc">Uninterrupted mindful solving with zero commercial advertisements.</p>
+                            <button id="settings-ads-btn" class="settings-purchase-btn" type="button">Remove Ads</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Group 2: Display & Tactile Feel (Preferences Toggles) -->
+                <div class="settings-group">
+                    <div class="settings-group-header">
+                        <span class="material-symbols-outlined settings-group-icon">tune</span>
+                        <h3 class="settings-group-title">Preferences</h3>
+                    </div>
+                    <div class="settings-card settings-options-card">
+                        <!-- Night Mode Row -->
+                        <div class="settings-option-row">
+                            <div class="settings-option-left">
+                                <div class="settings-option-icon-wrap">
+                                    <span class="material-symbols-outlined">dark_mode</span>
+                                </div>
+                                <div class="settings-option-text">
+                                    <span class="settings-option-title">Night Mode</span>
+                                    <span class="settings-option-desc">Deep navy contrast for evening deduction</span>
+                                </div>
+                            </div>
+                            <label class="stitch-switch" for="night-mode-toggle">
+                                <input type="checkbox" id="night-mode-toggle">
+                                <span class="stitch-slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="settings-card-divider"></div>
+
+                        <!-- Haptic Feedback Row -->
+                        <div class="settings-option-row">
+                            <div class="settings-option-left">
+                                <div class="settings-option-icon-wrap">
+                                    <span class="material-symbols-outlined">vibration</span>
+                                </div>
+                                <div class="settings-option-text">
+                                    <span class="settings-option-title">Haptic Feedback</span>
+                                    <span class="settings-option-desc">Tactile impulses on cell and note entry</span>
+                                </div>
+                            </div>
+                            <label class="stitch-switch" for="haptic-toggle">
+                                <input type="checkbox" id="haptic-toggle">
+                                <span class="stitch-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Group 2.5: Themes & Styling -->
+                <div class="settings-group">
+                    <div class="settings-group-header">
+                        <span class="material-symbols-outlined settings-group-icon">palette</span>
+                        <h3 class="settings-group-title">Board Themes</h3>
+                    </div>
+                    <div class="settings-card settings-theme-selector-card">
+                        <div class="theme-grid">
+                            <div class="theme-option-card" data-theme-id="classic">
+                                <div class="theme-swatch theme-swatch-classic">
+                                    <span class="theme-preview-number">5</span>
+                                </div>
+                                <div class="theme-option-info">
+                                    <span class="theme-option-name">Classic</span>
+                                    <span class="theme-option-status free">Included</span>
+                                </div>
+                            </div>
+                            <div class="theme-option-card" data-theme-id="dark">
+                                <div class="theme-swatch theme-swatch-dark">
+                                    <span class="theme-preview-number">5</span>
+                                </div>
+                                <div class="theme-option-info">
+                                    <span class="theme-option-name">Night</span>
+                                    <span class="theme-option-status free">Included</span>
+                                </div>
+                            </div>
+                            <div class="theme-option-card" data-theme-id="wood">
+                                <div class="theme-swatch theme-swatch-wood">
+                                    <span class="theme-preview-number">5</span>
+                                </div>
+                                <div class="theme-option-info">
+                                    <span class="theme-option-name">Zen Wood</span>
+                                    <span class="theme-option-status locked" id="theme-status-wood">
+                                        <span class="material-symbols-outlined theme-lock-icon">lock</span> Unlock 24h
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="theme-option-card" data-theme-id="cyberpunk">
+                                <div class="theme-swatch theme-swatch-cyberpunk">
+                                    <span class="theme-preview-number">5</span>
+                                </div>
+                                <div class="theme-option-info">
+                                    <span class="theme-option-name">Cyber Neon</span>
+                                    <span class="theme-option-status locked" id="theme-status-cyberpunk">
+                                        <span class="material-symbols-outlined theme-lock-icon">lock</span> Unlock 24h
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Group 3: Guidance & Assistance -->
+                <div class="settings-group">
+                    <div class="settings-group-header">
+                        <span class="material-symbols-outlined settings-group-icon">school</span>
+                        <h3 class="settings-group-title">Guidance &amp; Rules</h3>
+                    </div>
+                    <div class="settings-card settings-options-card">
+                        <button id="settings-tutorial-btn" class="settings-action-row" type="button">
+                            <div class="settings-option-left">
+                                <div class="settings-option-icon-wrap">
+                                    <span class="material-symbols-outlined">menu_book</span>
+                                </div>
+                                <div class="settings-option-text">
+                                    <span class="settings-option-title">How to Play</span>
+                                    <span class="settings-option-desc">Review fundamental rules and techniques</span>
+                                </div>
+                            </div>
+                            <span class="material-symbols-outlined settings-row-arrow">chevron_right</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Group 4: Support & Legal Folio -->
+                <div class="settings-group">
+                    <div class="settings-group-header">
+                        <span class="material-symbols-outlined settings-group-icon">verified_user</span>
+                        <h3 class="settings-group-title">Support &amp; Folio Info</h3>
+                    </div>
+                    <div class="settings-card settings-options-card">
+                        <!-- Rate Sudoku Pro -->
+                        <button id="settings-rate-btn" class="settings-action-row" type="button">
+                            <div class="settings-option-left">
+                                <div class="settings-option-icon-wrap">
+                                    <span class="material-symbols-outlined" style="color: var(--st-secondary-brass);">star</span>
+                                </div>
+                                <div class="settings-option-text">
+                                    <span class="settings-option-title">Rate Sudoku Pro</span>
+                                    <span class="settings-option-desc">Share feedback &amp; review on Google Play</span>
+                                </div>
+                            </div>
+                            <span class="material-symbols-outlined settings-row-arrow">open_in_new</span>
+                        </button>
+
+                        <div class="settings-card-divider"></div>
+
+                        <!-- Share Sudoku Pro -->
+                        <button id="settings-share-btn" class="settings-action-row" type="button">
+                            <div class="settings-option-left">
+                                <div class="settings-option-icon-wrap">
+                                    <span class="material-symbols-outlined">share</span>
+                                </div>
+                                <div class="settings-option-text">
+                                    <span class="settings-option-title">Share Sudoku Pro</span>
+                                    <span class="settings-option-desc">Invite friends and fellow solvers</span>
+                                </div>
+                            </div>
+                            <span class="material-symbols-outlined settings-row-arrow">chevron_right</span>
+                        </button>
+
+                        <div class="settings-card-divider"></div>
+
+                        <!-- Support -->
+                        <a href="mailto:ahmadxalman@gmail.com" class="settings-action-row" style="text-decoration: none;">
+                            <div class="settings-option-left">
+                                <div class="settings-option-icon-wrap">
+                                    <span class="material-symbols-outlined">mail</span>
+                                </div>
+                                <div class="settings-option-text">
+                                    <span class="settings-option-title">Help &amp; Support</span>
+                                    <span class="settings-option-desc">Contact developers with feedback or questions</span>
+                                </div>
+                            </div>
+                            <span class="material-symbols-outlined settings-row-arrow">open_in_new</span>
+                        </a>
+
+                        <div class="settings-card-divider"></div>
+
+                        <!-- Terms & Conditions -->
+                        <a href="https://appsedifice.com/terms-and-conditions/" class="settings-action-row" target="_blank" rel="noopener noreferrer" style="text-decoration: none;">
+                            <div class="settings-option-left">
+                                <div class="settings-option-icon-wrap">
+                                    <span class="material-symbols-outlined">description</span>
+                                </div>
+                                <div class="settings-option-text">
+                                    <span class="settings-option-title">Terms &amp; Conditions</span>
+                                    <span class="settings-option-desc">Usage terms and service agreements</span>
+                                </div>
+                            </div>
+                            <span class="material-symbols-outlined settings-row-arrow">open_in_new</span>
+                        </a>
+
+                        <div class="settings-card-divider"></div>
+
+                        <!-- Privacy Policy -->
+                        <a href="https://appsedifice.com/privacy-policy-2/" class="settings-action-row" target="_blank" rel="noopener noreferrer" style="text-decoration: none;">
+                            <div class="settings-option-left">
+                                <div class="settings-option-icon-wrap">
+                                    <span class="material-symbols-outlined">policy</span>
+                                </div>
+                                <div class="settings-option-text">
+                                    <span class="settings-option-title">Privacy Policy</span>
+                                    <span class="settings-option-desc">Information processing and privacy practices</span>
+                                </div>
+                            </div>
+                            <span class="material-symbols-outlined settings-row-arrow">open_in_new</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Colophon Version Footer -->
+                <div class="settings-colophon">
+                    <span class="settings-colophon-brand">Sudoku Pro</span>
+                    <span class="settings-colophon-dot">•</span>
+                    <span class="settings-colophon-edition">The Solvers’ Society Edition</span>
                 </div>
             </div>
         </div>
@@ -246,46 +789,161 @@
     <!-- Premium Victory Modal -->
     <div id="victory-modal" class="modal hidden victory-overlay">
         <div class="modal-content victory-content">
-            <h2 class="victory-title">Puzzle Completed!</h2>
-            
-            <div id="victory-stars" class="victory-stars">
-                <span class="v-star" id="v-star-1">★</span>
-                <span class="v-star" id="v-star-2">★</span>
-                <span class="v-star" id="v-star-3">★</span>
-            </div>
-
-            <div class="victory-stats-grid">
-                <div class="v-stat">
-                    <span class="v-stat-label">Difficulty</span>
-                    <span class="v-stat-value" id="victory-diff">Medium</span>
+            <!-- Editorial Edition Meta Bar -->
+            <div class="victory-meta-bar">
+                <div class="victory-meta-left">
+                    <span class="victory-meta-edition">The Daily Broadsheet</span>
+                    <span class="victory-meta-folio">Folio Solved</span>
                 </div>
-                <div class="v-stat">
-                    <span class="v-stat-label">Time</span>
-                    <span class="v-stat-value" id="victory-time">05:30</span>
-                </div>
-                <div class="v-stat">
-                    <span class="v-stat-label">Mistakes</span>
-                    <span class="v-stat-value" id="victory-mistakes">0</span>
-                </div>
-                <div class="v-stat">
-                    <span class="v-stat-label">Hints Used</span>
-                    <span class="v-stat-value" id="victory-hints">0</span>
+                <div class="victory-meta-right">
+                    <span class="victory-pristine-badge">
+                        <span class="material-symbols-outlined">workspace_premium</span>
+                        <span>Pristine</span>
+                    </span>
+                    <button id="victory-close-btn" class="victory-close-btn" type="button" aria-label="Return Home" title="Return Home">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
                 </div>
             </div>
 
-            <div id="victory-best-time" class="victory-best-time hidden">
-                🎉 New Best Time! 🎉
+            <!-- Scrollable Middle Body to guarantee buttons never get pushed off screen -->
+            <div class="victory-scroll-body">
+                <!-- Subtle Laurel & Sunburst Trophy Crest -->
+                <div class="victory-crest-wrap">
+                    <div class="victory-crest-glow"></div>
+                    <div class="victory-crest-ring">
+                        <div class="victory-crest-badge">
+                            <span class="material-symbols-outlined victory-crest-icon">military_tech</span>
+                        </div>
+                    </div>
+                    <!-- Interactive 3-Star Rating Tier -->
+                    <div id="victory-stars" class="victory-stars">
+                        <span class="v-star material-symbols-outlined" id="v-star-1">star</span>
+                        <span class="v-star material-symbols-outlined" id="v-star-2">star</span>
+                        <span class="v-star material-symbols-outlined" id="v-star-3">star</span>
+                    </div>
+                </div>
+
+                <!-- Victory Headline & Congratulatory Message -->
+                <div class="victory-header-group">
+                    <span class="victory-edition-tag">Folio Completion</span>
+                    <h2 class="victory-title">Puzzle Solved!</h2>
+                    <p class="victory-subtitle">Splendid deduction. You mastered this grid with quiet discipline.</p>
+                </div>
+
+                <!-- New Best Time Badge -->
+                <div id="victory-best-time" class="victory-best-time hidden">
+                    <span class="material-symbols-outlined">bolt</span>
+                    <span>New Best Time!</span>
+                </div>
+
+                <!-- Performance Ledger Bento Grid -->
+                <div class="victory-ledger-card">
+                    <div class="victory-ledger-header">
+                        <div class="victory-ledger-label-group">
+                            <span class="material-symbols-outlined victory-ledger-icon">analytics</span>
+                            <span class="victory-ledger-title">Performance Ledger</span>
+                        </div>
+                        <span class="victory-ledger-tag">Archived</span>
+                    </div>
+
+                    <div class="victory-stats-grid">
+                        <!-- Stat 1: Time -->
+                        <div class="v-stat v-stat-time">
+                            <div class="v-stat-left">
+                                <div class="v-stat-icon-wrap">
+                                    <span class="material-symbols-outlined">timer</span>
+                                </div>
+                                <div class="v-stat-text">
+                                    <span class="v-stat-label">Solving Time</span>
+                                    <span class="v-stat-value" id="victory-time">05:30</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Stat 2: Difficulty -->
+                        <div class="v-stat">
+                            <div class="v-stat-left">
+                                <div class="v-stat-icon-wrap">
+                                    <span class="material-symbols-outlined">tune</span>
+                                </div>
+                                <div class="v-stat-text">
+                                    <span class="v-stat-label">Difficulty</span>
+                                    <span class="v-stat-value" id="victory-diff">Medium</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Stat 3: Mistakes -->
+                        <div class="v-stat">
+                            <div class="v-stat-left">
+                                <div class="v-stat-icon-wrap">
+                                    <span class="material-symbols-outlined">error_outline</span>
+                                </div>
+                                <div class="v-stat-text">
+                                    <span class="v-stat-label">Mistakes</span>
+                                    <span class="v-stat-value" id="victory-mistakes">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Stat 4: Hints Used -->
+                        <div class="v-stat">
+                            <div class="v-stat-left">
+                                <div class="v-stat-icon-wrap">
+                                    <span class="material-symbols-outlined">lightbulb</span>
+                                </div>
+                                <div class="v-stat-text">
+                                    <span class="v-stat-label">Hints Used</span>
+                                    <span class="v-stat-value" id="victory-hints">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Stat 5: Score Added -->
+                        <div class="v-stat">
+                            <div class="v-stat-left">
+                                <div class="v-stat-icon-wrap">
+                                    <span class="material-symbols-outlined">stars</span>
+                                </div>
+                                <div class="v-stat-text">
+                                    <span class="v-stat-label">Score Added</span>
+                                    <span class="v-stat-value" id="victory-score">+2,400 pts</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
+            <!-- Victory Action Buttons: Pinned at bottom of card, always visible -->
             <div class="victory-buttons">
-                <button id="victory-bonus-btn" class="btn victory-bonus-btn">
-    🎁 Claim Bonus Hint
-</button>
-                <button id="victory-next-btn" class="btn v-btn-primary">Next Puzzle</button>
+                <!-- Bonus Hint Rewarded Ad CTA -->
+                <button id="victory-bonus-btn" class="victory-bonus-btn" type="button">
+                    <span class="material-symbols-outlined">featured_seasonal_and_gifts</span>
+                    <span>Claim Bonus Hint (2x)</span>
+                </button>
+
+                <!-- Primary CTA: Next Puzzle -->
+                <button id="victory-next-btn" class="victory-primary-btn" type="button">
+                    <span>Next Broadsheet Puzzle</span>
+                    <span class="material-symbols-outlined">arrow_forward</span>
+                </button>
+
+                <!-- Secondary Actions: Replay, Share, Home -->
                 <div class="victory-buttons-row">
-                    <button id="victory-replay-btn" class="btn hint-btn v-btn-secondary">Replay</button>
-                    <button id="victory-share-btn" class="btn hint-btn v-btn-secondary">Share</button>
-                    <button id="victory-home-btn" class="btn hint-btn v-btn-secondary">Home</button>
+                    <button id="victory-replay-btn" class="victory-secondary-btn" type="button" title="Replay">
+                        <span class="material-symbols-outlined">replay</span>
+                        <span>Replay</span>
+                    </button>
+                    <button id="victory-share-btn" class="victory-secondary-btn" type="button" title="Share Result">
+                        <span class="material-symbols-outlined">ios_share</span>
+                        <span>Share</span>
+                    </button>
+                    <button id="victory-home-btn" class="victory-secondary-btn" type="button" title="Home">
+                        <span class="material-symbols-outlined">home</span>
+                        <span>Archive</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -294,57 +952,239 @@
     <!-- Statistics Modal -->
     <div id="stats-modal" class="modal hidden">
         <div class="modal-content stats-content">
-            <button id="close-stats-btn" class="icon-btn close-btn">✕</button>
-            <h2>Statistics</h2>
-            <div class="stats-grid">
-                <div class="stat-box">
-                    <span class="stat-value" id="stat-games-played">0</span>
-                    <span class="stat-label">Games Played</span>
+            <!-- Modal Header -->
+            <div class="stats-modal-header">
+                <div class="stats-modal-title-group">
+                    <span class="stats-edition-tag">Solver Dossier</span>
+                    <h2 class="stats-modal-title">Statistics</h2>
                 </div>
-                <div class="stat-box">
-                    <span class="stat-value" id="stat-games-won">0</span>
-                    <span class="stat-label">Games Won</span>
+                <button id="close-stats-btn" class="stats-close-btn" title="Close" aria-label="Close" type="button">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+
+            <!-- Intro Subtitle -->
+            <p class="stats-intro-text">A documented ledger of your solving records, win efficiency, and puzzle discipline.</p>
+
+            <!-- Primary 2x2 Bento Cards -->
+            <div class="stats-bento-grid">
+                <!-- Card 1: Games Won & Win Rate -->
+                <div class="stats-bento-card">
+                    <div class="stats-card-top">
+                        <span class="stats-card-label">Games Won</span>
+                        <div class="stats-card-icon-wrap victories-icon">
+                            <span class="material-symbols-outlined">verified</span>
+                        </div>
+                    </div>
+                    <div class="stats-card-main">
+                        <span class="stats-card-hero-val" id="stat-games-won">0</span>
+                        <div class="stats-card-sub-metric">
+                            <span class="stats-rate-text" id="stat-win-rate">0%</span>
+                            <span class="stats-rate-label">Win Rate</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat-box">
-                    <span class="stat-value" id="stat-win-rate">0%</span>
-                    <span class="stat-label">Win Rate</span>
+
+                <!-- Card 2: Games Played -->
+                <div class="stats-bento-card">
+                    <div class="stats-card-top">
+                        <span class="stats-card-label">Games Played</span>
+                        <div class="stats-card-icon-wrap played-icon">
+                            <span class="material-symbols-outlined">grid_view</span>
+                        </div>
+                    </div>
+                    <div class="stats-card-main">
+                        <span class="stats-card-hero-val" id="stat-games-played">0</span>
+                        <div class="stats-card-sub-metric">
+                            <span class="stats-sub-note">Completed Grids</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat-box">
-                    <span class="stat-value" id="stat-current-streak">0</span>
-                    <span class="stat-label">Current Streak</span>
+
+                <!-- Card 3: Current Streak -->
+                <div class="stats-bento-card">
+                    <div class="stats-card-top">
+                        <span class="stats-card-label">Current Streak</span>
+                        <div class="stats-card-icon-wrap streak-icon">
+                            <span class="material-symbols-outlined">local_fire_department</span>
+                        </div>
+                    </div>
+                    <div class="stats-card-main">
+                        <div class="stats-val-row">
+                            <span class="stats-card-hero-val" id="stat-current-streak">0</span>
+                            <span class="stats-unit">Games</span>
+                        </div>
+                        <div class="stats-card-sub-metric">
+                            <span class="stats-sub-note">Active Run</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat-box">
-                    <span class="stat-value" id="stat-best-streak">0</span>
-                    <span class="stat-label">Best Streak</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-value" id="stat-best-time">--:--</span>
-                    <span class="stat-label">Best Time</span>
-                </div>
-                <div class="stat-box full-width">
-                    <span class="stat-value" id="stat-total-mistakes">0</span>
-                    <span class="stat-label">Total Mistakes Made</span>
+
+                <!-- Card 4: Best Streak -->
+                <div class="stats-bento-card">
+                    <div class="stats-card-top">
+                        <span class="stats-card-label">Best Streak</span>
+                        <div class="stats-card-icon-wrap best-icon">
+                            <span class="material-symbols-outlined">workspace_premium</span>
+                        </div>
+                    </div>
+                    <div class="stats-card-main">
+                        <div class="stats-val-row">
+                            <span class="stats-card-hero-val" id="stat-best-streak">0</span>
+                            <span class="stats-unit">Games</span>
+                        </div>
+                        <div class="stats-card-sub-metric">
+                            <span class="stats-sub-note">All-Time Peak</span>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="modal-buttons">
-                <button id="reset-stats-btn" class="btn undo-btn">Reset Stats</button>
+
+            <!-- Detailed Metrics Strip -->
+            <div class="stats-details-card">
+                <!-- Best Time Row -->
+                <div class="stats-detail-row">
+                    <div class="stats-detail-left">
+                        <div class="stats-detail-icon-wrap time-icon">
+                            <span class="material-symbols-outlined">timer</span>
+                        </div>
+                        <div class="stats-detail-text">
+                            <span class="stats-detail-title">Best Completion Time</span>
+                            <span class="stats-detail-desc">Fastest victory recorded</span>
+                        </div>
+                    </div>
+                    <div class="stats-detail-right">
+                        <span class="stats-detail-val" id="stat-best-time">--:--</span>
+                    </div>
+                </div>
+
+                <div class="stats-detail-divider"></div>
+
+                <!-- Total Mistakes Row -->
+                <div class="stats-detail-row">
+                    <div class="stats-detail-left">
+                        <div class="stats-detail-icon-wrap mistake-icon">
+                            <span class="material-symbols-outlined">error_outline</span>
+                        </div>
+                        <div class="stats-detail-text">
+                            <span class="stats-detail-title">Total Mistakes</span>
+                            <span class="stats-detail-desc">Inaccurate deductions recorded</span>
+                        </div>
+                    </div>
+                    <div class="stats-detail-right">
+                        <span class="stats-detail-val" id="stat-total-mistakes">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="stats-actions">
+                <button id="reset-stats-btn" class="stats-reset-btn" type="button">
+                    <span class="material-symbols-outlined">restart_alt</span>
+                    <span>Reset Statistics</span>
+                </button>
             </div>
         </div>
     </div>
 
     <!-- First Launch Consent Modal -->
-    <div id="consent-modal" class="modal hidden" style="z-index: 1000;">
-        <div class="modal-content" style="max-width: 400px;">
-            <h2>Welcome to Sudoku Pro</h2>
-            <p style="margin: 20px 0; line-height: 1.5; font-size: 16px;">
-                Before you start playing, please review our Terms and Conditions and Privacy Policy. By continuing to use this app, you agree to our policies.
-            </p>
-            <div class="modal-buttons" style="flex-direction: column; gap: 10px; align-items: center;">
-                <a href="https://appsedifice.com/terms-and-conditions/" target="_blank" style="color: var(--accent-red); text-decoration: underline;">View Terms &amp; Conditions</a>
-                <a href="https://appsedifice.com/privacy-policy-2/" target="_blank" style="color: var(--accent-red); text-decoration: underline;">View Privacy Policy</a>
+    <div id="consent-modal" class="modal hidden consent-overlay">
+        <div class="modal-content consent-card">
+            <!-- Modal Header / Edition Tag -->
+            <div class="consent-meta-bar">
+                <span class="consent-edition-tag">Solvers’ Society Preface</span>
+                <span class="consent-status-badge">Welcome</span>
             </div>
-            <div class="modal-buttons" style="margin-top: 30px;">
-                <button id="consent-accept-btn" class="btn" style="width: 100%;">I Accept</button>
+
+            <!-- Emblem / Crest -->
+            <div class="consent-crest-wrap">
+                <div class="consent-crest-glow"></div>
+                <div class="consent-crest-ring">
+                    <div class="consent-crest-badge">
+                        <span class="material-symbols-outlined consent-crest-icon">verified_user</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Title & Subtitle -->
+            <div class="consent-header-group">
+                <h2 class="consent-title">Welcome to Sudoku Pro</h2>
+                <p class="consent-desc">A mindful sanctuary for pure logic puzzles, quiet deduction, and daily practice.</p>
+            </div>
+
+            <!-- Reassurance Note / Privacy Policy Notice -->
+            <div class="consent-note-card">
+                <div class="consent-note-icon-wrap">
+                    <span class="material-symbols-outlined">policy</span>
+                </div>
+                <div class="consent-note-text">
+                    <span class="consent-note-title">Your Privacy &amp; Data</span>
+                    <p class="consent-note-body">Your puzzle history and solving records remain saved locally on this device. We display respectful sponsor notices to keep all puzzles free.</p>
+                </div>
+            </div>
+
+            <!-- Legal Links -->
+            <div class="consent-links-row">
+                <a href="https://appsedifice.com/terms-and-conditions/" target="_blank" rel="noopener noreferrer" class="consent-legal-link">
+                    <span>Terms &amp; Conditions</span>
+                    <span class="material-symbols-outlined">open_in_new</span>
+                </a>
+                <span class="consent-links-dot">•</span>
+                <a href="https://appsedifice.com/privacy-policy-2/" target="_blank" rel="noopener noreferrer" class="consent-legal-link">
+                    <span>Privacy Policy</span>
+                    <span class="material-symbols-outlined">open_in_new</span>
+                </a>
+            </div>
+
+            <!-- Actions -->
+            <div class="consent-actions">
+                <button id="consent-accept-btn" class="consent-primary-btn" type="button">
+                    <span class="material-symbols-outlined">play_arrow</span>
+                    <span>Begin Playing</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mandatory Immediate In-App Update Modal -->
+    <div id="mandatory-update-modal" class="modal hidden mandatory-update-overlay">
+        <div class="modal-content mandatory-update-card">
+            <div class="mandatory-update-meta-bar">
+                <span class="mandatory-edition-tag">Editorial Notice</span>
+                <span class="mandatory-status-badge">Update Required</span>
+            </div>
+
+            <div class="mandatory-crest-wrap">
+                <div class="mandatory-crest-glow"></div>
+                <div class="mandatory-crest-ring">
+                    <div class="mandatory-crest-badge">
+                        <span class="material-symbols-outlined mandatory-crest-icon">system_update</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mandatory-header-group">
+                <h2 class="mandatory-title">New Edition Available</h2>
+                <p class="mandatory-desc">A newer version of Sudoku Pro is required to continue solving with full security and features.</p>
+            </div>
+
+            <div class="mandatory-info-card">
+                <div class="mandatory-info-row">
+                    <span class="mandatory-info-label">Available On</span>
+                    <span class="mandatory-info-val">Google Play Store</span>
+                </div>
+                <div class="mandatory-info-row">
+                    <span class="mandatory-info-label">Requirement</span>
+                    <span class="mandatory-info-val">Mandatory Upgrade</span>
+                </div>
+            </div>
+
+            <div class="mandatory-actions">
+                <button id="mandatory-update-btn" class="mandatory-primary-btn" type="button">
+                    <span class="material-symbols-outlined">download</span>
+                    <span>Update on Google Play</span>
+                </button>
+                <p id="mandatory-update-status" class="mandatory-status-note hidden">Connecting to Google Play...</p>
             </div>
         </div>
     </div>
@@ -352,44 +1192,120 @@
     <!-- Daily Challenge Calendar Modal -->
     <div id="daily-challenge-modal" class="modal hidden">
         <div class="modal-content calendar-content">
-            <button id="close-daily-btn" class="icon-btn close-btn" title="Close">✖</button>
-            
-            <div class="cal-header">
-                <button id="cal-prev-btn" class="icon-btn cal-nav-btn">◀</button>
-                <h2 id="cal-month-year">June 2026</h2>
-                <button id="cal-next-btn" class="icon-btn cal-nav-btn">▶</button>
+            <!-- Modal Header -->
+            <div class="cal-modal-header">
+                <div class="cal-modal-title-group">
+                    <span class="cal-edition-tag">Chronicle Archive</span>
+                    <h2 class="cal-modal-title">Daily Challenge</h2>
+                </div>
+                <button id="close-daily-btn" class="cal-close-btn" title="Close" aria-label="Close" type="button">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
             </div>
 
-            <div class="cal-stats">
-                <div class="cal-stat-item">
-                    <span id="cal-streak-current">0</span>
-                    <label>Streak</label>
+            <!-- Intro Subtitle -->
+            <p class="cal-intro-text">Enjoy a fresh Sudoku puzzle every day. Complete challenges, build your streak, and track your progress.</p>
+
+            <!-- Streak & Monthly Progress Cards -->
+            <div class="cal-stats-grid">
+                <div class="cal-stat-card">
+                    <div class="cal-stat-icon-wrapper streak-icon">
+                        <span class="material-symbols-outlined">local_fire_department</span>
+                    </div>
+                    <div class="cal-stat-info">
+                        <span id="cal-streak-current" class="cal-stat-val">0</span>
+                        <span class="cal-stat-label">Current Streak</span>
+                    </div>
                 </div>
-                <div class="cal-stat-item">
-                    <span id="cal-streak-best">0</span>
-                    <label>Best</label>
+
+                <div class="cal-stat-card">
+                    <div class="cal-stat-icon-wrapper best-icon">
+                        <span class="material-symbols-outlined">workspace_premium</span>
+                    </div>
+                    <div class="cal-stat-info">
+                        <span id="cal-streak-best" class="cal-stat-val">0</span>
+                        <span class="cal-stat-label">Best Streak</span>
+                    </div>
                 </div>
-                <div class="cal-stat-item">
-                    <span id="cal-total">0</span>
-                    <label>Total</label>
+
+                <div class="cal-stat-card">
+                    <div class="cal-stat-icon-wrapper month-icon">
+                        <span class="material-symbols-outlined">event_available</span>
+                    </div>
+                    <div class="cal-stat-info">
+                        <span id="cal-month-progress" class="cal-stat-val">0/30</span>
+                        <span class="cal-stat-label">This Month</span>
+                    </div>
                 </div>
-                <div class="cal-stat-item">
-                    <span id="cal-month-progress">0/30</span>
-                    <label>Month</label>
+
+                <div class="cal-stat-card">
+                    <div class="cal-stat-icon-wrapper total-icon">
+                        <span class="material-symbols-outlined">verified</span>
+                    </div>
+                    <div class="cal-stat-info">
+                        <span id="cal-total" class="cal-stat-val">0</span>
+                        <span class="cal-stat-label">Total Solved</span>
+                    </div>
                 </div>
             </div>
 
-            <div class="cal-weekdays">
-                <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
-            </div>
-            
-            <div id="cal-grid" class="cal-grid">
-                <!-- Days injected by JS -->
+            <!-- Month Navigation Bar -->
+            <div class="cal-nav-bar">
+                <button id="cal-prev-btn" class="cal-nav-btn" title="Previous Month" aria-label="Previous Month" type="button">
+                    <span class="material-symbols-outlined">chevron_left</span>
+                </button>
+                <div class="cal-month-display">
+                    <span class="material-symbols-outlined cal-month-icon">calendar_month</span>
+                    <h3 id="cal-month-year" class="cal-month-text">October 2026</h3>
+                </div>
+                <button id="cal-next-btn" class="cal-nav-btn" title="Next Month" aria-label="Next Month" type="button">
+                    <span class="material-symbols-outlined">chevron_right</span>
+                </button>
             </div>
 
-            <div class="cal-footer">
-                <div id="cal-selected-status" class="cal-selected-status">Select a day</div>
-                <button id="daily-play-btn" class="btn cal-play-btn">Play</button>
+            <!-- Calendar Card -->
+            <div class="cal-card">
+                <div class="cal-weekdays">
+                    <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+                </div>
+                
+                <div id="cal-grid" class="cal-grid">
+                    <!-- Days injected by JS -->
+                </div>
+
+                <!-- Calendar Legend -->
+                <div class="cal-legend">
+                    <div class="cal-legend-item">
+                        <span class="legend-dot solved-dot"></span>
+                        <span>Solved</span>
+                    </div>
+                    <div class="cal-legend-item">
+                        <span class="legend-dot today-dot"></span>
+                        <span>Today</span>
+                    </div>
+                    <div class="cal-legend-item">
+                        <span class="legend-dot missed-dot"></span>
+                        <span>Missed</span>
+                    </div>
+                    <div class="cal-legend-item">
+                        <span class="legend-dot future-dot"></span>
+                        <span>Locked</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Selected Date & Play Action Card -->
+            <div class="cal-action-card">
+                <div class="cal-action-header">
+                    <div class="cal-action-badge">
+                        <span class="material-symbols-outlined">auto_stories</span>
+                        <span id="cal-selected-status" class="cal-selected-status">Select a day</span>
+                    </div>
+                </div>
+                <button id="daily-play-btn" class="cal-play-btn" type="button">
+                    <span class="material-symbols-outlined">play_arrow</span>
+                    <span>Play Now</span>
+                </button>
             </div>
         </div>
     </div>
@@ -397,10 +1313,54 @@
     <!-- Achievements Modal -->
     <div id="achievements-modal" class="modal hidden">
         <div class="modal-content achievements-content">
-            <button id="close-achievements-btn" class="icon-btn close-btn" title="Close">✖</button>
-            <h2>Achievements</h2>
+            <!-- Modal Header -->
+            <div class="achieve-modal-header">
+                <div class="achieve-modal-title-group">
+                    <span class="achieve-edition-tag">Archival Recognition</span>
+                    <h2 class="achieve-modal-title">Achievements</h2>
+                </div>
+                <button id="close-achievements-btn" class="achieve-close-btn" title="Close" aria-label="Close" type="button">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+
+            <!-- Intro Subtitle -->
+            <p class="achieve-intro-text">Complete puzzles, unlock achievements, and celebrate your Sudoku progress.</p>
+
+            <!-- Milestones Mastered Progress Card -->
+            <div class="achieve-summary-card">
+                <div class="achieve-summary-watermark">
+                    <span class="material-symbols-outlined">military_tech</span>
+                </div>
+                <div class="achieve-summary-content">
+                    <div class="achieve-summary-top">
+                        <div class="achieve-summary-left">
+                            <div class="achieve-summary-badge">
+                                <span class="material-symbols-outlined">military_tech</span>
+                            </div>
+                            <div class="achieve-summary-headings">
+                                <h3 class="achieve-summary-title">Milestones Mastered</h3>
+                                <p class="achieve-summary-subtitle">Archived Player Catalog</p>
+                            </div>
+                        </div>
+                        <span id="achieve-summary-pct" class="achieve-pct-badge">0%</span>
+                    </div>
+
+                    <div class="achieve-summary-bottom">
+                        <div class="achieve-summary-metric-row">
+                            <span class="achieve-metric-label">Progress</span>
+                            <span id="achieve-summary-count" class="achieve-metric-val">0 of 6 Completed</span>
+                        </div>
+                        <div class="achieve-track">
+                            <div id="achieve-progress-fill" class="achieve-fill" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Achievements Cards Catalog Container -->
             <div id="achievements-list" class="achievements-list">
-                <!-- Populated by JS -->
+                <!-- Populated dynamically by AchievementsEngine.renderModal() -->
             </div>
         </div>
     </div>
