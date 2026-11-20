@@ -12,7 +12,10 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BillingPlugin.class);
         registerPlugin(NativeAdPlugin.class);
         registerPlugin(RemoteConfigPlugin.class);
+        registerPlugin(ConsentPlugin.class);
         registerPlugin(AppOpenAdPlugin.class);
+        registerPlugin(RewardedAdPlugin.class);
+        registerPlugin(InterstitialAdPlugin.class);
         registerPlugin(ReviewPlugin.class);
         registerPlugin(HapticsPlugin.class);
         registerPlugin(InAppUpdatePlugin.class);

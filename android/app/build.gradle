@@ -68,6 +68,7 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation 'com.google.android.gms:play-services-ads:23.0.0'
+    implementation 'com.google.android.ump:user-messaging-platform:4.0.0'
     implementation project(':capacitor-cordova-android-plugins')
 }
 

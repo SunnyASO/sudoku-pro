@@ -22,9 +22,13 @@ const AdMobService = {
         const fullscreenBusy = this.isAnyFullScreenBusy();
         const initialized = !!this.isInitialized;
         const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 0;
+        const canRequest = !!this.canRequestAds();
+        const consentStatus = this.consentStatus;
+        const privacyRequired = !!this.privacyOptionsRequired;
 
         console.log(`[AdState]${contextTag ? ' (' + contextTag + ')' : ''} premium: ${isPremium}`);
         console.log(`[AdState] ads_enabled: ${adsEnabled}`);
+        console.log(`[AdState] can_request_ads: ${canRequest} (status: ${consentStatus}, privacy_required: ${privacyRequired})`);
         console.log(`[AdState] test_mode: ${testMode}`);
         console.log(`[AdState] home_native_enabled: ${homeNativeEnabled}`);
         console.log(`[AdState] gameplay_native_enabled: ${gameplayNativeEnabled}`);
@@ -38,6 +42,10 @@ const AdMobService = {
     },
     
     isInitialized: false,
+    canRequestAdsState: false,
+    consentStatus: 'UNKNOWN',
+    privacyOptionsRequired: false,
+    isConsentGathering: false,
 
     isRewardedHintLoading: false,
     isRewardedHintShowing: false,
@@ -73,6 +81,7 @@ const AdMobService = {
     isGameplayBannerShowing: false,
     isGameplayBannerLoading: false,
     isNativeAdShowing: false,
+    isHomeNativeLoading: false,
     currentNativeAdScreen: null,
     _initPromise: null,
     currentBannerHeight: 0,
@@ -82,6 +91,7 @@ const AdMobService = {
 
     isAppOpenShowing: false,
     hasAppOpenListeners: false,
+    isAppOpenInitialized: false,
 
     completionInterstitialsShownThisSession: 0,
     gameOverInterstitialsShownThisSession: 0,
@@ -114,11 +124,166 @@ const AdMobService = {
         return null;
     },
 
+    getRewardedAdPlugin() {
+        if (typeof window !== 'undefined' && window.Capacitor) {
+            if (typeof window.Capacitor.registerPlugin === 'function') {
+                return window.Capacitor.registerPlugin('RewardedAd');
+            }
+            return window.Capacitor.Plugins ? window.Capacitor.Plugins.RewardedAd : null;
+        }
+        return null;
+    },
+
+    getInterstitialAdPlugin() {
+        if (typeof window !== 'undefined' && window.Capacitor) {
+            if (typeof window.Capacitor.registerPlugin === 'function') {
+                return window.Capacitor.registerPlugin('InterstitialAd');
+            }
+            return window.Capacitor.Plugins ? window.Capacitor.Plugins.InterstitialAd : null;
+        }
+        return null;
+    },
+
+    getConsentPlugin() {
+        if (typeof window !== 'undefined' && window.Capacitor) {
+            if (typeof window.Capacitor.registerPlugin === 'function') {
+                return window.Capacitor.registerPlugin('Consent');
+            }
+            return window.Capacitor.Plugins ? window.Capacitor.Plugins.Consent : null;
+        }
+        return null;
+    },
+
+    /**
+     * Authoritative Google UMP consent gathering entrypoint.
+     * Must be awaited on application startup before requesting any ads.
+     */
+    async gatherConsent(options = {}) {
+        if (!window.Capacitor || !window.Capacitor.isNativePlatform()) {
+            console.log("[AdMobService] Non-native platform: UMP consent marked NOT_REQUIRED.");
+            this.canRequestAdsState = true;
+            this.consentStatus = 'NOT_REQUIRED';
+            this.privacyOptionsRequired = false;
+            return { canRequestAds: true, consentStatus: 'NOT_REQUIRED', isPrivacyOptionsRequired: false };
+        }
+
+        const Consent = this.getConsentPlugin();
+        if (!Consent || typeof Consent.initializeConsent !== 'function') {
+            console.warn("[AdMobService] Consent plugin not available. Defaulting canRequestAds to true.");
+            this.canRequestAdsState = true;
+            return { canRequestAds: true, consentStatus: 'NOT_REQUIRED', isPrivacyOptionsRequired: false };
+        }
+
+        try {
+            this.isConsentGathering = true;
+            console.log("[AdMobService] Requesting UMP consent gathering...", options);
+            const res = await Consent.initializeConsent(options);
+            this.canRequestAdsState = !!(res && res.canRequestAds);
+            this.consentStatus = (res && res.consentStatus) || 'UNKNOWN';
+            this.privacyOptionsRequired = !!(res && res.isPrivacyOptionsRequired);
+            console.log(`[AdMobService] UMP consent gathered: canRequestAds=${this.canRequestAdsState}, status=${this.consentStatus}, privacyOptionsRequired=${this.privacyOptionsRequired}`);
+            return res;
+        } catch (err) {
+            console.warn("[AdMobService] Error gathering UMP consent (querying disk state):", err);
+            try {
+                const statusRes = await Consent.getConsentStatus();
+                this.canRequestAdsState = !!(statusRes && statusRes.canRequestAds);
+                this.consentStatus = (statusRes && statusRes.consentStatus) || 'UNKNOWN';
+                this.privacyOptionsRequired = !!(statusRes && statusRes.isPrivacyOptionsRequired);
+                return statusRes;
+            } catch (e2) {
+                this.canRequestAdsState = false;
+                return { canRequestAds: false, error: err };
+            }
+        } finally {
+            this.isConsentGathering = false;
+        }
+    },
+
+    canRequestAds() {
+        return !!this.canRequestAdsState;
+    },
+
+    isPrivacyOptionsRequired() {
+        return !!this.privacyOptionsRequired;
+    },
+
+    getConsentStatus() {
+        return this.consentStatus;
+    },
+
+    /**
+     * Opens Google UMP Privacy Options on demand (e.g. from app Settings).
+     */
+    async showPrivacyOptions() {
+        if (!window.Capacitor || !window.Capacitor.isNativePlatform()) {
+            console.log("[AdMobService] showPrivacyOptions: Not native platform.");
+            return { success: false, reason: 'not_native' };
+        }
+        const Consent = this.getConsentPlugin();
+        if (!Consent || typeof Consent.showPrivacyOptions !== 'function') {
+            console.warn("[AdMobService] showPrivacyOptions: Consent plugin unavailable.");
+            return { success: false, reason: 'plugin_unavailable' };
+        }
+
+        try {
+            console.log("[AdMobService] Presenting UMP Privacy Options...");
+            const res = await Consent.showPrivacyOptions();
+            this.canRequestAdsState = !!(res && res.canRequestAds);
+            this.privacyOptionsRequired = !!(res && res.isPrivacyOptionsRequired);
+            console.log(`[AdMobService] Privacy options dismissed: canRequestAds=${this.canRequestAdsState}`);
+
+            if (!this.canRequestAdsState) {
+                console.log("[AdMobService] Consent revoked via Privacy Options. Hiding all ads.");
+                this.hideGameplayBannerAd();
+                this.hideHomeBannerAd();
+                this.hideNativeAd('home');
+                this.hideNativeAd('gameplay');
+                this.hideNativeAd('pause');
+            } else if (!this.isInitialized) {
+                await this.initialize();
+            }
+            return res;
+        } catch (err) {
+            console.error("[AdMobService] Error presenting Privacy Options:", err);
+            return { success: false, error: err };
+        }
+    },
+
+    async resetConsent() {
+        const Consent = this.getConsentPlugin();
+        if (Consent && typeof Consent.resetConsent === 'function') {
+            await Consent.resetConsent();
+            this.canRequestAdsState = false;
+            this.consentStatus = 'UNKNOWN';
+            this.privacyOptionsRequired = false;
+            this.isAppOpenInitialized = false;
+            this.hideGameplayBannerAd();
+            this.hideHomeBannerAd();
+            this.hideNativeAd('home');
+            this.hideNativeAd('gameplay');
+            this.hideNativeAd('pause');
+            console.log("[AdMobService] Consent reset to UNKNOWN.");
+        }
+    },
+
     setSharedFullScreenLocked(locked) {
         try {
             const AppOpenAd = this.getAppOpenAdPlugin();
             if (AppOpenAd && AppOpenAd.setSharedFullScreenLocked) {
                 AppOpenAd.setSharedFullScreenLocked({ locked: !!locked });
+            }
+        } catch (e) {}
+        try {
+            const RewardedAd = this.getRewardedAdPlugin();
+            if (RewardedAd && RewardedAd.setSharedFullScreenLocked) {
+                RewardedAd.setSharedFullScreenLocked({ locked: !!locked });
+            }
+        } catch (e) {}
+        try {
+            const InterstitialAd = this.getInterstitialAdPlugin();
+            if (InterstitialAd && InterstitialAd.setSharedFullScreenLocked) {
+                InterstitialAd.setSharedFullScreenLocked({ locked: !!locked });
             }
         } catch (e) {}
     },
@@ -137,6 +302,18 @@ const AdMobService = {
             const AppOpenAd = this.getAppOpenAdPlugin();
             if (AppOpenAd && AppOpenAd.setPurchaseActive) {
                 AppOpenAd.setPurchaseActive({ active: !!active });
+            }
+        } catch (e) {}
+        try {
+            const RewardedAd = this.getRewardedAdPlugin();
+            if (RewardedAd && RewardedAd.setPurchaseActive) {
+                RewardedAd.setPurchaseActive({ active: !!active });
+            }
+        } catch (e) {}
+        try {
+            const InterstitialAd = this.getInterstitialAdPlugin();
+            if (InterstitialAd && InterstitialAd.setPurchaseActive) {
+                InterstitialAd.setPurchaseActive({ active: !!active });
             }
         } catch (e) {}
     },
@@ -186,6 +363,20 @@ const AdMobService = {
             return false;
         }
 
+        if (!this.canRequestAds()) {
+            const Consent = this.getConsentPlugin();
+            if (Consent && typeof Consent.canRequestAds === 'function') {
+                try {
+                    const check = await Consent.canRequestAds();
+                    this.canRequestAdsState = !!(check && check.canRequestAds);
+                } catch (e) {}
+            }
+            if (!this.canRequestAds()) {
+                console.log("[AdMobService] initialize skipped: UMP canRequestAds is false.");
+                return false;
+            }
+        }
+
         if (this.isInitialized) {
             return true;
         }
@@ -216,6 +407,9 @@ const AdMobService = {
 
                 this.isInitialized = true;
                 console.log("AdMob initialized successfully.");
+                await this.initRewardedAd();
+                await this.initNativeAd();
+                await this.initInterstitialAd();
                 return true;
             } catch (error) {
                 console.error("Failed to initialize AdMob:", error);
@@ -380,39 +574,237 @@ const AdMobService = {
         return true;
     },
 
-    async preloadRewardedAd(adUnitKey = "REWARDED_MISTAKE_RESCUE") {
+    async initRewardedAd() {
+        try {
+            const RewardedAd = this.getRewardedAdPlugin();
+            if (RewardedAd && RewardedAd.init) {
+                const enabled = this.isFeatureEnabled('rewarded_ads_enabled');
+                const premium = !!window.isPremium;
+                const testMode = this.isTestModeEnabled();
+                await RewardedAd.init({
+                    enabled,
+                    isPremium: premium,
+                    testMode
+                });
+                if (RewardedAd.configureUnits) {
+                    await RewardedAd.configureUnits({
+                        units: {
+                            HINT: this.getAdUnitId("REWARDED_HINT") || "",
+                            MISTAKE_RESCUE: this.getAdUnitId("REWARDED_MISTAKE_RESCUE") || "",
+                            DAILY_CHALLENGE: this.getAdUnitId("DAILY_CHALLENGE_REWARDED") || "",
+                            VICTORY_BONUS: this.getAdUnitId("BONUS_REWARDED") || "",
+                            THEME_UNLOCK: this.getAdUnitId("BONUS_REWARDED") || "",
+                            AUTO_CHECK: this.getAdUnitId("REWARDED_HINT") || ""
+                        }
+                    });
+                }
+                console.log("[AdMobService] RewardedAd native plugin initialized successfully.");
+            }
+        } catch (e) {
+            console.warn("[AdMobService] initRewardedAd failed:", e);
+        }
+    },
+
+    async initNativeAd() {
+        try {
+            const NativeAd = this.getNativeAdPlugin();
+            if (NativeAd && NativeAd.configure) {
+                const enabled = this.isFeatureEnabled('native_ads_enabled');
+                const premium = !!window.isPremium;
+                const testMode = this.isTestModeEnabled();
+                await NativeAd.configure({
+                    enabled,
+                    isPremium: premium,
+                    testMode
+                });
+                if (NativeAd.configureUnits) {
+                    await NativeAd.configureUnits({
+                        units: {
+                            HOME: this.getAdUnitId("HOME_NATIVE") || "",
+                            GAMEPLAY: this.getAdUnitId("HOME_NATIVE") || "",
+                            PAUSE: this.getAdUnitId("HOME_NATIVE") || "",
+                            VICTORY: this.getAdUnitId("HOME_NATIVE") || "",
+                            ACHIEVEMENTS: this.getAdUnitId("ACHIEVEMENTS_NATIVE") || "",
+                            DAILY_CHALLENGE: this.getAdUnitId("DAILY_CHALLENGE_NATIVE") || ""
+                        }
+                    });
+                }
+                console.log("[AdMobService] NativeAd native plugin initialized successfully.");
+            }
+        } catch (e) {
+            console.warn("[AdMobService] initNativeAd failed:", e);
+        }
+    },
+
+    async initInterstitialAd() {
+        try {
+            const InterstitialAd = this.getInterstitialAdPlugin();
+            if (InterstitialAd && InterstitialAd.init) {
+                const enabled = this.isFeatureEnabled('interstitial_ads_enabled');
+                const premium = !!window.isPremium;
+                const testMode = this.isTestModeEnabled();
+                await InterstitialAd.init({
+                    enabled,
+                    isPremium: premium,
+                    testMode
+                });
+                if (InterstitialAd.configureUnits) {
+                    await InterstitialAd.configureUnits({
+                        units: {
+                            COMPLETION: this.getAdUnitId("COMPLETION_INTERSTITIAL") || "",
+                            NEW_GAME: this.getAdUnitId("NEW_GAME_INTERSTITIAL") || "",
+                            ABANDON: this.getAdUnitId("ABANDON_INTERSTITIAL") || "",
+                            GAME_OVER: this.getAdUnitId("GAME_OVER_INTERSTITIAL") || this.getAdUnitId("ABANDON_INTERSTITIAL") || ""
+                        }
+                    });
+                }
+                if (InterstitialAd.configurePlacementFlags) {
+                    await InterstitialAd.configurePlacementFlags({
+                        flags: {
+                            COMPLETION: this.isFeatureEnabled('completion_interstitial_enabled'),
+                            NEW_GAME: this.isFeatureEnabled('new_game_interstitial_enabled'),
+                            ABANDON: this.isFeatureEnabled('abandon_interstitial_enabled'),
+                            GAME_OVER: this.isFeatureEnabled('game_over_interstitial_enabled')
+                        }
+                    });
+                }
+                if (InterstitialAd.configurePolicies) {
+                    const cooldown = (typeof AdMobConfig !== 'undefined' && AdMobConfig.REMOTE && AdMobConfig.REMOTE.fullscreen_ad_cooldown_seconds != null)
+                        ? Number(AdMobConfig.REMOTE.fullscreen_ad_cooldown_seconds)
+                        : ((typeof AdMobConfig !== 'undefined' && AdMobConfig.COOLDOWN_SECONDS != null) ? AdMobConfig.COOLDOWN_SECONDS : 60);
+                    const completionCap = (typeof AdMobConfig !== 'undefined' && AdMobConfig.REMOTE && AdMobConfig.REMOTE.completion_interstitial_session_cap != null)
+                        ? Number(AdMobConfig.REMOTE.completion_interstitial_session_cap)
+                        : 8;
+                    const gameOverCap = (typeof AdMobConfig !== 'undefined' && AdMobConfig.REMOTE && AdMobConfig.REMOTE.game_over_interstitial_session_cap != null)
+                        ? Number(AdMobConfig.REMOTE.game_over_interstitial_session_cap)
+                        : 8;
+                    await InterstitialAd.configurePolicies({
+                        cooldownSeconds: cooldown,
+                        completionCap: completionCap,
+                        gameOverCap: gameOverCap
+                    });
+                }
+                console.log("[AdMobService] InterstitialAd native plugin initialized successfully.");
+            }
+        } catch (e) {
+            console.warn("[AdMobService] initInterstitialAd failed:", e);
+        }
+    },
+
+    async prepareInterstitial(placement, adUnitKey = null) {
+        if (window.isPremium || !AdMobConfig.ADS_ENABLED) return false;
+        if (!this.isFeatureEnabled('interstitial_ads_enabled')) return false;
+
+        // Pre-network placement-specific enable check
+        if (placement === 'COMPLETION' && !this.isFeatureEnabled('completion_interstitial_enabled')) return false;
+        if (placement === 'NEW_GAME' && !this.isFeatureEnabled('new_game_interstitial_enabled')) return false;
+        if (placement === 'ABANDON' && !this.isFeatureEnabled('abandon_interstitial_enabled')) return false;
+        if (placement === 'GAME_OVER' && !this.isFeatureEnabled('game_over_interstitial_enabled')) return false;
+
+        const InterstitialAd = this.getInterstitialAdPlugin();
+        if (InterstitialAd && InterstitialAd.prepare) {
+            try {
+                const adId = adUnitKey ? this.getAdUnitId(adUnitKey) : undefined;
+                const res = await InterstitialAd.prepare({
+                    placement: placement,
+                    adUnitId: adId
+                });
+                return !!(res && res.prepared);
+            } catch (e) {
+                console.warn(`[AdMobService] prepareInterstitial (${placement}) failed:`, e);
+                return false;
+            }
+        }
+        return false;
+    },
+
+    async isInterstitialReady(placement) {
+        if (window.isPremium || !AdMobConfig.ADS_ENABLED) return false;
+        const InterstitialAd = this.getInterstitialAdPlugin();
+        if (InterstitialAd && InterstitialAd.isReady) {
+            try {
+                const res = await InterstitialAd.isReady({ placement });
+                return !!(res && res.ready);
+            } catch (e) {
+                return false;
+            }
+        }
+        return false;
+    },
+
+    async isInterstitialEligible(placement) {
+        if (window.isPremium || !AdMobConfig.ADS_ENABLED) return false;
+        const InterstitialAd = this.getInterstitialAdPlugin();
+        if (InterstitialAd && InterstitialAd.isEligible) {
+            try {
+                const res = await InterstitialAd.isEligible({ placement });
+                return !!(res && res.eligible);
+            } catch (e) {
+                return false;
+            }
+        }
+        return true;
+    },
+
+    async disposeInterstitial(placement = null, reason = 'OPPORTUNITY_LEFT') {
+        const InterstitialAd = this.getInterstitialAdPlugin();
+        if (InterstitialAd && InterstitialAd.dispose) {
+            try {
+                await InterstitialAd.dispose({ placement, reason });
+            } catch (e) {}
+        }
+    },
+
+    async prepareRewarded(placement, adUnitKey = null) {
         if (window.isPremium || !AdMobConfig.ADS_ENABLED) return false;
         if (!this.isFeatureEnabled('rewarded_ads_enabled')) return false;
-        if (this.isRewardedAdReady) return true;
-        if (this.isRewardedPreloading) return false;
 
-        const initialized = await this.initialize();
-        if (!initialized) return false;
-
-        const adId = this.getAdUnitId(adUnitKey) || this.getAdUnitId("REWARDED_MISTAKE_RESCUE");
-        if (!adId) return false;
-
-        try {
-            const AdMob = window.Capacitor && window.Capacitor.Plugins ? window.Capacitor.Plugins.AdMob : null;
-            if (!AdMob) return false;
-
-            this.isRewardedPreloading = true;
-            console.log(`[AdMobService] Preloading rewarded ad (${adUnitKey})...`);
-            await AdMob.prepareRewardVideoAd({
-                adId: adId,
-                isTesting: !AdMobConfig.IS_PRODUCTION,
-            });
-            this.isRewardedAdReady = true;
-            this.currentPreloadedRewardedKey = adUnitKey;
-            this.isRewardedPreloading = false;
-            console.log(`[AdMobService] Rewarded ad preloaded & ready (${adUnitKey})!`);
-            return true;
-        } catch (e) {
-            this.isRewardedPreloading = false;
-            this.isRewardedAdReady = false;
-            console.warn(`[AdMobService] Preload rewarded ad failed:`, e);
-            return false;
+        const RewardedAd = this.getRewardedAdPlugin();
+        if (RewardedAd && RewardedAd.prepare) {
+            try {
+                const adId = adUnitKey ? this.getAdUnitId(adUnitKey) : undefined;
+                const res = await RewardedAd.prepare({
+                    placement: placement,
+                    adUnitId: adId
+                });
+                return !!(res && res.prepared);
+            } catch (e) {
+                console.warn(`[AdMobService] prepareRewarded (${placement}) failed:`, e);
+                return false;
+            }
         }
+        return false;
+    },
+
+    async isRewardedReady(placement) {
+        if (window.isPremium || !AdMobConfig.ADS_ENABLED) return false;
+        const RewardedAd = this.getRewardedAdPlugin();
+        if (RewardedAd && RewardedAd.isReady) {
+            try {
+                const res = await RewardedAd.isReady({ placement });
+                return !!(res && res.ready);
+            } catch (e) {
+                return false;
+            }
+        }
+        return this.isRewardedAdReady;
+    },
+
+    async disposeRewarded(placement = null, reason = 'OPPORTUNITY_LEFT') {
+        const RewardedAd = this.getRewardedAdPlugin();
+        if (RewardedAd && RewardedAd.dispose) {
+            try {
+                await RewardedAd.dispose({ placement, reason });
+            } catch (e) {}
+        }
+        this.isRewardedAdReady = false;
+        this.currentPreloadedRewardedKey = null;
+    },
+
+    async preloadRewardedAd(adUnitKey = "REWARDED_MISTAKE_RESCUE") {
+        // Speculative startup/dismissal preload removed in favor of intent-proximate prepareRewarded()
+        console.log(`[AdMobService] Legacy preloadRewardedAd ignored for ${adUnitKey} (replaced by native intent-proximate preparation).`);
+        return false;
     },
 
     async showRewardedHintAd() {
@@ -446,6 +838,42 @@ const AdMobService = {
             this.hideAdLoadingOverlay();
             console.log("Rewarded Hint skipped: AdMob not initialized.");
             return false;
+        }
+
+        const RewardedAd = this.getRewardedAdPlugin();
+        if (RewardedAd && RewardedAd.show) {
+            try {
+                this.isRewardedHintLoading = true;
+                const isReady = await this.isRewardedReady('HINT');
+                if (!isReady) {
+                    await this.showAdLoadingOverlay({
+                        icon: "lightbulb",
+                        title: "Preparing Advertisement",
+                        message: "Preparing your hint advertisement."
+                    });
+                    await this.prepareRewarded('HINT', 'REWARDED_HINT');
+                }
+                this.isRewardedHintLoading = false;
+                this.isRewardedHintShowing = true;
+                this.trackAdEvent('ad_show_attempt', { placement: 'rewarded_hint', ad_type: 'rewarded' });
+
+                const res = await RewardedAd.show({ placement: 'HINT' });
+                this.hideAdLoadingOverlay();
+                this.isRewardedHintShowing = false;
+                this.markAdShown();
+
+                if (res && res.shown) {
+                    this.trackAdEvent('ad_shown', { placement: 'rewarded_hint', ad_type: 'rewarded' });
+                    return !!res.rewardEarned;
+                }
+                return false;
+            } catch (e) {
+                this.hideAdLoadingOverlay();
+                this.isRewardedHintLoading = false;
+                this.isRewardedHintShowing = false;
+                console.error("Rewarded Hint native show error:", e);
+                return false;
+            }
         }
 
         const adId = this.getAdUnitId("REWARDED_HINT");
@@ -498,9 +926,6 @@ const AdMobService = {
             this.isRewardedAdReady = false;
             this.markAdShown();
 
-            // Background preload next rewarded ad
-            setTimeout(() => { this.preloadRewardedAd(); }, 1200);
-
             if (rewardItem) {
                 console.log("Rewarded Hint earned:", rewardItem);
                 return true;
@@ -548,6 +973,42 @@ const AdMobService = {
             this.hideAdLoadingOverlay();
             console.log("Mistake Rescue skipped: AdMob not initialized.");
             return false;
+        }
+
+        const RewardedAd = this.getRewardedAdPlugin();
+        if (RewardedAd && RewardedAd.show) {
+            try {
+                this.isMistakeRescueLoading = true;
+                const isReady = await this.isRewardedReady('MISTAKE_RESCUE');
+                if (!isReady) {
+                    await this.showAdLoadingOverlay({
+                        icon: "favorite",
+                        title: "Preparing Advertisement",
+                        message: "Watch the ad to continue your puzzle."
+                    });
+                    await this.prepareRewarded('MISTAKE_RESCUE', 'REWARDED_MISTAKE_RESCUE');
+                }
+                this.isMistakeRescueLoading = false;
+                this.isMistakeRescueShowing = true;
+                this.trackAdEvent('ad_show_attempt', { placement: 'rewarded_mistake_rescue', ad_type: 'rewarded' });
+
+                const res = await RewardedAd.show({ placement: 'MISTAKE_RESCUE' });
+                this.hideAdLoadingOverlay();
+                this.isMistakeRescueShowing = false;
+                this.markAdShown();
+
+                if (res && res.shown) {
+                    this.trackAdEvent('ad_shown', { placement: 'rewarded_mistake_rescue', ad_type: 'rewarded' });
+                    return !!res.rewardEarned;
+                }
+                return false;
+            } catch (e) {
+                this.hideAdLoadingOverlay();
+                this.isMistakeRescueLoading = false;
+                this.isMistakeRescueShowing = false;
+                console.error("Mistake Rescue native show error:", e);
+                return false;
+            }
         }
 
         const adId = this.getAdUnitId("REWARDED_MISTAKE_RESCUE");
@@ -599,9 +1060,6 @@ const AdMobService = {
             this.isMistakeRescueShowing = false;
             this.isRewardedAdReady = false;
             this.markAdShown();
-
-            // Background preload next rewarded ad
-            setTimeout(() => { this.preloadRewardedAd(); }, 1200);
 
             if (rewardItem) {
                 console.log("Mistake Rescue earned:", rewardItem);
@@ -798,6 +1256,36 @@ const AdMobService = {
             return { success: false, reason: 'admob_not_initialized' };
         }
 
+        const RewardedAd = this.getRewardedAdPlugin();
+        if (RewardedAd && RewardedAd.show) {
+            try {
+                this.isDailyChallengeRewardedLoading = true;
+                const isReady = await this.isRewardedReady('DAILY_CHALLENGE');
+                if (!isReady) {
+                    await this.prepareRewarded('DAILY_CHALLENGE', 'DAILY_CHALLENGE_REWARDED');
+                }
+                this.isDailyChallengeRewardedLoading = false;
+                this.isDailyChallengeRewardedShowing = true;
+
+                this.trackAdEvent('ad_show_attempt', { placement: 'daily_challenge_rewarded', ad_type: 'rewarded' });
+                const res = await RewardedAd.show({ placement: 'DAILY_CHALLENGE' });
+                this.hideAdLoadingOverlay();
+                this.isDailyChallengeRewardedShowing = false;
+                this.markAdShown();
+
+                if (res && res.shown) {
+                    this.trackAdEvent('ad_shown', { placement: 'daily_challenge_rewarded', ad_type: 'rewarded' });
+                    return { success: !!res.rewardEarned, reason: res.rewardEarned ? 'reward_earned' : 'dismissed_without_reward' };
+                }
+                return { success: false, reason: res && res.reason ? res.reason : 'show_failed' };
+            } catch (e) {
+                this.hideAdLoadingOverlay();
+                this.isDailyChallengeRewardedLoading = false;
+                this.isDailyChallengeRewardedShowing = false;
+                return { success: false, reason: 'exception: ' + e };
+            }
+        }
+
         const adId = this.getAdUnitId("DAILY_CHALLENGE_REWARDED");
         const isTesting = this.isTestModeEnabled();
         console.log(`[DailyAd] Ad unit selected: ${adId} (isTesting=${isTesting})`);
@@ -921,6 +1409,36 @@ const AdMobService = {
             return false;
         }
 
+        const RewardedAd = this.getRewardedAdPlugin();
+        if (RewardedAd && RewardedAd.show) {
+            try {
+                this.isBonusRewardedLoading = true;
+                const isReady = await this.isRewardedReady('VICTORY_BONUS');
+                if (!isReady) {
+                    await this.prepareRewarded('VICTORY_BONUS', 'BONUS_REWARDED');
+                }
+                this.isBonusRewardedLoading = false;
+                this.isBonusRewardedShowing = true;
+
+                this.trackAdEvent('ad_show_attempt', { placement: 'bonus_rewarded', ad_type: 'rewarded' });
+                const res = await RewardedAd.show({ placement: 'VICTORY_BONUS' });
+                this.hideAdLoadingOverlay();
+                this.isBonusRewardedShowing = false;
+                this.markAdShown();
+
+                if (res && res.shown) {
+                    this.trackAdEvent('ad_shown', { placement: 'bonus_rewarded', ad_type: 'rewarded' });
+                    return !!res.rewardEarned;
+                }
+                return false;
+            } catch (e) {
+                this.hideAdLoadingOverlay();
+                this.isBonusRewardedLoading = false;
+                this.isBonusRewardedShowing = false;
+                return false;
+            }
+        }
+
         const adId = this.getAdUnitId("BONUS_REWARDED");
         if (!adId) {
             this.hideAdLoadingOverlay();
@@ -1037,6 +1555,38 @@ const AdMobService = {
             return false;
         }
 
+        const RewardedAd = this.getRewardedAdPlugin();
+        if (RewardedAd && RewardedAd.show) {
+            try {
+                const nativePlacement = placement === 'auto_check' ? 'AUTO_CHECK' : 'THEME_UNLOCK';
+                this.isGenericRewardedLoading = true;
+                const isReady = await this.isRewardedReady(nativePlacement);
+                if (!isReady) {
+                    await this.showAdLoadingOverlay({ icon, title, message });
+                    await this.prepareRewarded(nativePlacement, adUnitKey);
+                }
+                this.isGenericRewardedLoading = false;
+                this.isGenericRewardedShowing = true;
+
+                this.trackAdEvent('ad_show_attempt', { placement, ad_type: 'rewarded' });
+                const res = await RewardedAd.show({ placement: nativePlacement });
+                this.hideAdLoadingOverlay();
+                this.isGenericRewardedShowing = false;
+                this.markAdShown();
+
+                if (res && res.shown) {
+                    this.trackAdEvent('ad_shown', { placement, ad_type: 'rewarded' });
+                    return !!res.rewardEarned;
+                }
+                return false;
+            } catch (e) {
+                this.hideAdLoadingOverlay();
+                this.isGenericRewardedLoading = false;
+                this.isGenericRewardedShowing = false;
+                return false;
+            }
+        }
+
         const adId = this.getAdUnitId(adUnitKey) || this.getAdUnitId("REWARDED_HINT");
         if (!adId) {
             this.hideAdLoadingOverlay();
@@ -1083,9 +1633,6 @@ const AdMobService = {
             this.isGenericRewardedShowing = false;
             this.isRewardedAdReady = false;
             this.markAdShown();
-
-            // Background preload next rewarded ad
-            setTimeout(() => { this.preloadRewardedAd(); }, 1200);
 
             if (lifecycleResult.success || (directShowResult && (directShowResult.type || directShowResult.amount))) {
                 console.log(`[AdMobService] Rewarded (${placement}) confirmed earned:`, lifecycleResult.rewardItem || directShowResult);
@@ -1226,12 +1773,6 @@ const AdMobService = {
     },
 
     async showCompletionInterstitialAd() {
-        await this.showAdLoadingOverlay({
-            icon: "auto_stories",
-            title: "Preparing Advertisement",
-            message: "Your next puzzle will begin after the ad."
-        });
-
         if (window.isPremium) {
             this.hideAdLoadingOverlay();
             this.trackAdEvent('ad_skipped', { reason: 'premium_remove_ads', placement: 'completion_interstitial' });
@@ -1261,284 +1802,223 @@ const AdMobService = {
             return false;
         }
 
-        const adId = this.getAdUnitId("COMPLETION_INTERSTITIAL");
-        if (!adId) {
-            this.hideAdLoadingOverlay();
-            console.log("Completion Interstitial skipped: missing ad unit ID.");
-            return false;
-        }
+        const InterstitialAd = this.getInterstitialAdPlugin();
+        if (InterstitialAd && InterstitialAd.show) {
+            try {
+                // Pre-network eligibility gating
+                const eligible = await this.isInterstitialEligible('COMPLETION');
+                if (!eligible) {
+                    this.hideAdLoadingOverlay();
+                    console.log("[CompletionAd] Skipped: not eligible according to native policy (cooldown/cap).");
+                    this.trackAdEvent('ad_skipped', { reason: 'ineligible_policy', placement: 'completion_interstitial' });
+                    return false;
+                }
 
-        let dismissalPromise = null;
-        try {
-            const AdMob = window.Capacitor.Plugins.AdMob;
+                this.isCompletionInterstitialLoading = true;
+                const isReady = await this.isInterstitialReady('COMPLETION');
+                if (!isReady) {
+                    await this.showAdLoadingOverlay({
+                        icon: "auto_stories",
+                        title: "Preparing Advertisement",
+                        message: "Your next puzzle will begin after the ad."
+                    });
+                    await this.prepareInterstitial('COMPLETION', 'COMPLETION_INTERSTITIAL');
+                }
 
-            if (!AdMob) {
+                this.isCompletionInterstitialLoading = false;
+                const readyNow = await this.isInterstitialReady('COMPLETION');
+                if (!readyNow) {
+                    this.hideAdLoadingOverlay();
+                    console.log("[CompletionAd] Not ready after preparation; proceeding with navigation.");
+                    return false;
+                }
+
+                this.isCompletionInterstitialShowing = true;
+                this.setSharedFullScreenLocked(true);
+                this.trackAdEvent('ad_show_attempt', { placement: 'completion_interstitial', ad_type: 'interstitial' });
+
+                const res = await InterstitialAd.show({ placement: 'COMPLETION' });
+
                 this.hideAdLoadingOverlay();
-                console.warn("Completion Interstitial unavailable: AdMob plugin not found.");
+                this.isCompletionInterstitialShowing = false;
+                this.setSharedFullScreenLocked(false);
+
+                if (res && res.shown) {
+                    this.completionInterstitialsShownThisSession++;
+                    this.markAdShown();
+                    this.trackAdEvent('ad_shown', { placement: 'completion_interstitial', ad_type: 'interstitial' });
+                    return true;
+                }
+                return false;
+            } catch (e) {
+                this.hideAdLoadingOverlay();
+                this.isCompletionInterstitialLoading = false;
+                this.isCompletionInterstitialShowing = false;
+                this.setSharedFullScreenLocked(false);
+                console.error("[CompletionAd] Native show error:", e);
                 return false;
             }
-
-            this.isCompletionInterstitialLoading = true;
-            this.setSharedFullScreenLocked(true);
-
-            await AdMob.prepareInterstitial({
-                adId: adId,
-                isTesting: !AdMobConfig.IS_PRODUCTION,
-            });
-
-            this.isCompletionInterstitialLoading = false;
-            this.isCompletionInterstitialShowing = true;
-
-            dismissalPromise = this.waitForInterstitialDismissal(AdMob, () => {
-                this.hideAdLoadingOverlay();
-            });
-            this.trackAdEvent('ad_show_attempt', { placement: 'completion_interstitial', ad_type: 'interstitial' });
-            await AdMob.showInterstitial();
-            await dismissalPromise;
-            this.trackAdEvent('ad_shown', { placement: 'completion_interstitial', ad_type: 'interstitial' });
-
-            this.isCompletionInterstitialShowing = false;
-            this.completionInterstitialsShownThisSession++;
-            this.markAdShown();
-
-            console.log("Completion Interstitial shown.");
-            return true;
-        } catch (error) {
-            this.hideAdLoadingOverlay();
-            this.isCompletionInterstitialLoading = false;
-            this.isCompletionInterstitialShowing = false;
-
-            console.error("Completion Interstitial failed:", error);
-            return false;
-        } finally {
-            if (dismissalPromise && typeof dismissalPromise.cancel === 'function') {
-                dismissalPromise.cancel();
-            }
-            this.hideAdLoadingOverlay();
-            this.setSharedFullScreenLocked(false);
         }
+
+        this.hideAdLoadingOverlay();
+        return false;
     },
 
     async showNewGameInterstitialAd() {
-        await this.showAdLoadingOverlay({
-            icon: "add_box",
-            title: "Preparing Advertisement",
-            message: "Your next puzzle will begin after the ad."
-        });
-
         if (window.isPremium) {
-            this.hideAdLoadingOverlay();
             this.trackAdEvent('ad_skipped', { reason: 'premium_remove_ads', placement: 'new_game_interstitial' });
             return false;
         }
         if (!this.isFeatureEnabled('interstitial_ads_enabled') || !this.isFeatureEnabled('new_game_interstitial_enabled')) {
-            this.hideAdLoadingOverlay();
             console.log("New Game Interstitial skipped: disabled by Remote Config or master switch.");
             return false;
         }
 
         if (this.isAnyInterstitialBusy()) {
-            this.hideAdLoadingOverlay();
             console.log("New Game Interstitial skipped: another interstitial is loading or showing.");
             return false;
         }
 
         if (this.isCooldownActive("New Game Interstitial")) {
-            this.hideAdLoadingOverlay();
             return false;
         }
 
         const initialized = await this.initialize();
         if (!initialized) {
-            this.hideAdLoadingOverlay();
             console.log("New Game Interstitial skipped: AdMob not initialized.");
             return false;
         }
 
-        const adId = this.getAdUnitId("NEW_GAME_INTERSTITIAL");
-        if (!adId) {
-            this.hideAdLoadingOverlay();
-            console.log("New Game Interstitial skipped: missing ad unit ID.");
-            return false;
-        }
+        const InterstitialAd = this.getInterstitialAdPlugin();
+        if (InterstitialAd && InterstitialAd.show) {
+            try {
+                // Pre-network eligibility gating
+                const eligible = await this.isInterstitialEligible('NEW_GAME');
+                if (!eligible) {
+                    console.log("[NewGameAd] Skipped: not eligible according to native policy.");
+                    this.trackAdEvent('ad_skipped', { reason: 'ineligible_policy', placement: 'new_game_interstitial' });
+                    return false;
+                }
 
-        let dismissalPromise = null;
-        try {
-            const AdMob = window.Capacitor.Plugins.AdMob;
+                // Zero-latency ready check: never block user tap behind network spinner
+                const isReady = await this.isInterstitialReady('NEW_GAME');
+                if (!isReady) {
+                    console.log("[NewGameAd] No cached ad ready; continuing navigation instantly without network blocking.");
+                    // Opportunistic non-blocking background prepare for subsequent opportunities
+                    this.prepareInterstitial('NEW_GAME', 'NEW_GAME_INTERSTITIAL').catch(() => {});
+                    return false;
+                }
 
-            if (!AdMob) {
-                this.hideAdLoadingOverlay();
-                console.warn("New Game Interstitial unavailable: AdMob plugin not found.");
+                this.isNewGameInterstitialShowing = true;
+                this.setSharedFullScreenLocked(true);
+                this.trackAdEvent('ad_show_attempt', { placement: 'new_game_interstitial', ad_type: 'interstitial' });
+
+                const res = await InterstitialAd.show({ placement: 'NEW_GAME' });
+
+                this.isNewGameInterstitialShowing = false;
+                this.setSharedFullScreenLocked(false);
+
+                if (res && res.shown) {
+                    this.markAdShown();
+                    this.trackAdEvent('ad_shown', { placement: 'new_game_interstitial', ad_type: 'interstitial' });
+                    return true;
+                }
+                return false;
+            } catch (e) {
+                this.isNewGameInterstitialShowing = false;
+                this.setSharedFullScreenLocked(false);
+                console.error("[NewGameAd] Native show error:", e);
                 return false;
             }
-
-            this.isNewGameInterstitialLoading = true;
-            this.setSharedFullScreenLocked(true);
-
-            await AdMob.prepareInterstitial({
-                adId: adId,
-                isTesting: !AdMobConfig.IS_PRODUCTION,
-            });
-
-            this.isNewGameInterstitialLoading = false;
-            this.isNewGameInterstitialShowing = true;
-
-            dismissalPromise = this.waitForInterstitialDismissal(AdMob, () => {
-                this.hideAdLoadingOverlay();
-            });
-            this.trackAdEvent('ad_show_attempt', { placement: 'new_game_interstitial', ad_type: 'interstitial' });
-            await AdMob.showInterstitial();
-            await dismissalPromise;
-            this.trackAdEvent('ad_shown', { placement: 'new_game_interstitial', ad_type: 'interstitial' });
-
-            this.isNewGameInterstitialShowing = false;
-            this.markAdShown();
-
-            console.log("New Game Interstitial shown.");
-            return true;
-        } catch (error) {
-            this.hideAdLoadingOverlay();
-            this.isNewGameInterstitialLoading = false;
-            this.isNewGameInterstitialShowing = false;
-
-            console.error("New Game Interstitial failed:", error);
-            return false;
-        } finally {
-            if (dismissalPromise && typeof dismissalPromise.cancel === 'function') {
-                dismissalPromise.cancel();
-            }
-            this.hideAdLoadingOverlay();
-            this.setSharedFullScreenLocked(false);
         }
+
+        return false;
     },
 
     async showAbandonInterstitialAd() {
-        await this.showAdLoadingOverlay({
-            icon: "home",
-            title: "Preparing Advertisement",
-            message: "Saving puzzle progress. Continuing after the ad."
-        });
-
         if (window.isPremium) {
-            this.hideAdLoadingOverlay();
             this.trackAdEvent('ad_skipped', { reason: 'premium_remove_ads', placement: 'abandon_interstitial' });
             return false;
         }
         if (!this.isFeatureEnabled('interstitial_ads_enabled') || !this.isFeatureEnabled('abandon_interstitial_enabled')) {
-            this.hideAdLoadingOverlay();
             console.log("Abandon Interstitial skipped: disabled by Remote Config or master switch.");
             return false;
         }
 
         if (this.isAnyInterstitialBusy()) {
-            this.hideAdLoadingOverlay();
             console.log("Abandon Interstitial skipped: another interstitial is loading or showing.");
             return false;
         }
 
         if (this.isCooldownActive("Abandon Interstitial")) {
-            this.hideAdLoadingOverlay();
             return false;
         }
 
         const initialized = await this.initialize();
         if (!initialized) {
-            this.hideAdLoadingOverlay();
             console.log("Abandon Interstitial skipped: AdMob not initialized.");
             return false;
         }
 
-        const adId = this.getAdUnitId("ABANDON_INTERSTITIAL");
-        if (!adId) {
-            this.hideAdLoadingOverlay();
-            console.log("Abandon Interstitial skipped: missing ad unit ID.");
-            return false;
-        }
+        const InterstitialAd = this.getInterstitialAdPlugin();
+        if (InterstitialAd && InterstitialAd.show) {
+            try {
+                // Pre-network eligibility gating
+                const eligible = await this.isInterstitialEligible('ABANDON');
+                if (!eligible) {
+                    console.log("[AbandonAd] Skipped: not eligible according to native policy.");
+                    this.trackAdEvent('ad_skipped', { reason: 'ineligible_policy', placement: 'abandon_interstitial' });
+                    return false;
+                }
 
-        let dismissalPromise = null;
-        try {
-            const AdMob = window.Capacitor.Plugins.AdMob;
+                // Zero-latency ready check: never block user tap behind network spinner
+                const isReady = await this.isInterstitialReady('ABANDON');
+                if (!isReady) {
+                    console.log("[AbandonAd] No cached ad ready; continuing navigation instantly without network blocking.");
+                    // Opportunistic non-blocking background prepare for subsequent opportunities
+                    this.prepareInterstitial('ABANDON', 'ABANDON_INTERSTITIAL').catch(() => {});
+                    return false;
+                }
 
-            if (!AdMob) {
-                this.hideAdLoadingOverlay();
-                console.warn("Abandon Interstitial unavailable: AdMob plugin not found.");
+                this.isAbandonInterstitialShowing = true;
+                this.setSharedFullScreenLocked(true);
+                this.trackAdEvent('ad_show_attempt', { placement: 'abandon_interstitial', ad_type: 'interstitial' });
+
+                const res = await InterstitialAd.show({ placement: 'ABANDON' });
+
+                this.isAbandonInterstitialShowing = false;
+                this.setSharedFullScreenLocked(false);
+
+                if (res && res.shown) {
+                    this.markAdShown();
+                    this.trackAdEvent('ad_shown', { placement: 'abandon_interstitial', ad_type: 'interstitial' });
+                    return true;
+                }
+                return false;
+            } catch (e) {
+                this.isAbandonInterstitialShowing = false;
+                this.setSharedFullScreenLocked(false);
+                console.error("[AbandonAd] Native show error:", e);
                 return false;
             }
-
-            this.isAbandonInterstitialLoading = true;
-            this.setSharedFullScreenLocked(true);
-
-            await AdMob.prepareInterstitial({
-                adId: adId,
-                isTesting: !AdMobConfig.IS_PRODUCTION,
-            });
-
-            this.isAbandonInterstitialLoading = false;
-            this.isAbandonInterstitialShowing = true;
-
-            dismissalPromise = this.waitForInterstitialDismissal(AdMob, () => {
-                this.hideAdLoadingOverlay();
-            });
-            this.trackAdEvent('ad_show_attempt', { placement: 'abandon_interstitial', ad_type: 'interstitial' });
-            await AdMob.showInterstitial();
-            await dismissalPromise;
-            this.trackAdEvent('ad_shown', { placement: 'abandon_interstitial', ad_type: 'interstitial' });
-
-            this.isAbandonInterstitialShowing = false;
-            this.markAdShown();
-
-            console.log("Abandon Interstitial shown.");
-            return true;
-        } catch (error) {
-            this.hideAdLoadingOverlay();
-            this.isAbandonInterstitialLoading = false;
-            this.isAbandonInterstitialShowing = false;
-
-            console.error("Abandon Interstitial failed:", error);
-            return false;
-        } finally {
-            if (dismissalPromise && typeof dismissalPromise.cancel === 'function') {
-                dismissalPromise.cancel();
-            }
-            this.hideAdLoadingOverlay();
-            this.setSharedFullScreenLocked(false);
         }
+
+        return false;
     },
 
     async showGameOverInterstitialAd(options = {}) {
         const action = (options && options.action) ? options.action : 'unknown';
         const isTryAgain = (action === 'try_again');
 
-        // Immediately show the ad preparation overlay
-        await this.showAdLoadingOverlay({
-            icon: isTryAgain ? "replay" : "add_box",
-            title: "Preparing Advertisement",
-            message: isTryAgain ? "Your puzzle will restart after the ad." : "Your next puzzle will begin after the ad."
-        });
-
-        // 1. Diagnostics & Signal Gathering
         const isPremium = !!window.isPremium;
         const masterAdsEnabled = !!AdMobConfig.ADS_ENABLED && (!AdMobConfig.REMOTE || AdMobConfig.REMOTE.ads_enabled !== false && AdMobConfig.REMOTE.ads_enabled !== "false");
         const interstitialAdsEnabled = this.isFeatureEnabled('interstitial_ads_enabled');
         const gameOverInterstitialEnabled = this.isFeatureEnabled('game_over_interstitial_enabled');
-        const cooldownConfiguredSeconds = (typeof AdMobConfig !== 'undefined' && AdMobConfig.COOLDOWN_SECONDS != null) 
-            ? AdMobConfig.COOLDOWN_SECONDS 
-            : 90;
         const cooldownRemaining = this.getCooldownRemainingSeconds();
         const sessionCap = Number(this.getRemoteValue('game_over_interstitial_session_cap', 5));
         const sessionCapRemaining = sessionCap > 0 ? Math.max(0, sessionCap - this.gameOverInterstitialsShownThisSession) : Infinity;
         const isBusy = this.isAnyInterstitialBusy();
 
-        // Comprehensive debug logging
-        console.log(`[GameOverAd] ========================================`);
-        console.log(`[GameOverAd] Requested action: ${action}`);
-        console.log(`[GameOverAd] Premium state: ${isPremium}`);
-        console.log(`[GameOverAd] Remote Config flags: ads_enabled=${masterAdsEnabled}, interstitial_ads_enabled=${interstitialAdsEnabled}, game_over_interstitial_enabled=${gameOverInterstitialEnabled}`);
-        console.log(`[GameOverAd] Cooldown remaining: ${cooldownRemaining}s (configured: ${cooldownConfiguredSeconds}s)`);
-        console.log(`[GameOverAd] Session cap: ${this.gameOverInterstitialsShownThisSession}/${sessionCap} (remaining: ${sessionCapRemaining})`);
-        console.log(`[GameOverAd] Interstitial busy state: ${isBusy}`);
-
-        // 2. Eligibility Evaluation
         let isEligible = true;
         let skipReason = null;
 
@@ -1559,96 +2039,80 @@ const AdMobService = {
             skipReason = `cooldown_active_${cooldownRemaining}s_remaining`;
         }
 
-        console.log(`[GameOverAd] Eligibility check: ${isEligible ? "ELIGIBLE" : "INELIGIBLE (" + skipReason + ")"}`);
-
         if (!isEligible) {
             this.hideAdLoadingOverlay();
             this.trackAdEvent('ad_skipped', { reason: skipReason, placement: 'game_over_interstitial', action: action });
-            console.log(`[GameOverAd] Outcome: skipped (Reason: ${skipReason})`);
-            console.log(`[GameOverAd] ========================================`);
+            console.log(`[GameOverAd] Skipped: ${skipReason}`);
             return false;
         }
 
-        // 3. AdMob Initialization Check
         const initialized = await this.initialize();
         if (!initialized) {
             this.hideAdLoadingOverlay();
-            console.log(`[GameOverAd] Outcome: skipped (Reason: AdMob not initialized)`);
-            console.log(`[GameOverAd] ========================================`);
+            console.log("[GameOverAd] Skipped: AdMob not initialized");
             return false;
         }
 
-        // 4. Ad Unit ID Resolution
-        const adId = this.getAdUnitId("GAME_OVER_INTERSTITIAL") || this.getAdUnitId("ABANDON_INTERSTITIAL");
-        if (!adId) {
-            this.hideAdLoadingOverlay();
-            console.log(`[GameOverAd] Outcome: skipped (Reason: missing ad unit ID)`);
-            console.log(`[GameOverAd] ========================================`);
-            return false;
-        }
+        const InterstitialAd = this.getInterstitialAdPlugin();
+        if (InterstitialAd && InterstitialAd.show) {
+            try {
+                // Pre-network eligibility gating
+                const nativeEligible = await this.isInterstitialEligible('GAME_OVER');
+                if (!nativeEligible) {
+                    this.hideAdLoadingOverlay();
+                    console.log("[GameOverAd] Skipped: native policy says ineligible.");
+                    this.trackAdEvent('ad_skipped', { reason: 'ineligible_policy', placement: 'game_over_interstitial', action: action });
+                    return false;
+                }
 
-        console.log(`[GameOverAd] Ad unit ID resolved: ${adId}`);
+                this.isGameOverInterstitialLoading = true;
+                const isReady = await this.isInterstitialReady('GAME_OVER');
+                if (!isReady) {
+                    await this.showAdLoadingOverlay({
+                        icon: isTryAgain ? "replay" : "add_box",
+                        title: "Preparing Advertisement",
+                        message: isTryAgain ? "Your puzzle will restart after the ad." : "Your next puzzle will begin after the ad."
+                    });
+                    await this.prepareInterstitial('GAME_OVER', 'GAME_OVER_INTERSTITIAL');
+                }
 
-        let dismissalPromise = null;
-        try {
-            const AdMob = window.Capacitor.Plugins.AdMob;
-            if (!AdMob) {
+                this.isGameOverInterstitialLoading = false;
+                const readyNow = await this.isInterstitialReady('GAME_OVER');
+                if (!readyNow) {
+                    this.hideAdLoadingOverlay();
+                    console.log("[GameOverAd] Not ready after preparation; proceeding with action.");
+                    return false;
+                }
+
+                this.isGameOverInterstitialShowing = true;
+                this.setSharedFullScreenLocked(true);
+                this.trackAdEvent('ad_show_attempt', { placement: 'game_over_interstitial', ad_type: 'interstitial', action: action });
+
+                const res = await InterstitialAd.show({ placement: 'GAME_OVER' });
+
                 this.hideAdLoadingOverlay();
-                console.warn("[GameOverAd] AdMob plugin not found on window.Capacitor.Plugins.");
-                console.log(`[GameOverAd] Outcome: skipped (Reason: AdMob plugin unavailable)`);
-                console.log(`[GameOverAd] ========================================`);
+                this.isGameOverInterstitialShowing = false;
+                this.setSharedFullScreenLocked(false);
+
+                if (res && res.shown) {
+                    this.gameOverInterstitialsShownThisSession++;
+                    this.markAdShown();
+                    this.trackAdEvent('ad_shown', { placement: 'game_over_interstitial', ad_type: 'interstitial', action: action });
+                    return true;
+                }
+                return false;
+            } catch (e) {
+                this.hideAdLoadingOverlay();
+                this.isGameOverInterstitialLoading = false;
+                this.isGameOverInterstitialShowing = false;
+                this.setSharedFullScreenLocked(false);
+                console.error("[GameOverAd] Native show error:", e);
                 return false;
             }
-
-            this.isGameOverInterstitialLoading = true;
-            this.setSharedFullScreenLocked(true);
-
-            console.log(`[GameOverAd] Preparing interstitial (isTesting: ${!AdMobConfig.IS_PRODUCTION})...`);
-            await AdMob.prepareInterstitial({
-                adId: adId,
-                isTesting: !AdMobConfig.IS_PRODUCTION,
-            });
-
-            this.isGameOverInterstitialLoading = false;
-            this.isGameOverInterstitialShowing = true;
-            console.log(`[GameOverAd] Ad preparation result: SUCCESS (ad is ready to display)`);
-
-            // Register dismissal sequencing listener
-            dismissalPromise = this.waitForInterstitialDismissal(AdMob, () => {
-                console.log(`[GameOverAd] Ad displayed on screen. Clearing loading overlay.`);
-                this.hideAdLoadingOverlay();
-            });
-
-            this.trackAdEvent('ad_show_attempt', { placement: 'game_over_interstitial', ad_type: 'interstitial', action: action });
-            console.log(`[GameOverAd] Calling AdMob.showInterstitial()...`);
-            await AdMob.showInterstitial();
-
-            // Wait for genuine dismissal callback before resolving
-            await dismissalPromise;
-
-            this.trackAdEvent('ad_shown', { placement: 'game_over_interstitial', ad_type: 'interstitial', action: action });
-            this.isGameOverInterstitialShowing = false;
-            this.gameOverInterstitialsShownThisSession++;
-            this.markAdShown();
-
-            console.log(`[GameOverAd] Outcome: SHOWN (ad was presented and dismissed successfully)`);
-            console.log(`[GameOverAd] ========================================`);
-            return true;
-        } catch (error) {
-            this.hideAdLoadingOverlay();
-            this.isGameOverInterstitialLoading = false;
-            this.isGameOverInterstitialShowing = false;
-            console.error("[GameOverAd] Outcome: FAILED (Reason:", error, ")");
-            console.log(`[GameOverAd] ========================================`);
-            return false;
-        } finally {
-            if (dismissalPromise && typeof dismissalPromise.cancel === 'function') {
-                dismissalPromise.cancel();
-            }
-            this.hideAdLoadingOverlay();
-            this.setSharedFullScreenLocked(false);
-            // DO NOT call this.markAdShown() here — only update cooldown on successful ad presentation!
         }
+
+        this.hideAdLoadingOverlay();
+        return false;
     },
 
     _setupBannerListeners(AdMob) {
@@ -1696,6 +2160,10 @@ const AdMobService = {
 
         if (window.isPremium) {
             console.log("[GameplayBanner] skipped (Reason: User is premium)");
+            return false;
+        }
+        if (!this.canRequestAds()) {
+            console.log("[GameplayBanner] skipped (Reason: UMP consent not granted / canRequestAds=false)");
             return false;
         }
         if (!this.isFeatureEnabled('banner_ads_enabled') || !this.isFeatureEnabled('gameplay_banner_enabled')) {
@@ -1780,7 +2248,21 @@ const AdMobService = {
 
     async showHomeBannerAd() {
         if (window.isPremium) return false;
+        if (!this.canRequestAds()) {
+            console.log("[HomeBanner] skipped (Reason: UMP consent not granted / canRequestAds=false)");
+            return false;
+        }
         if (!this.isFeatureEnabled('banner_ads_enabled')) return false;
+
+        // Guard against competing with Home Native request
+        if (this.isHomeNativeLoading) {
+            console.log("[HomeBanner] Skipped: Home Native is currently loading (preventing competing request)");
+            return false;
+        }
+        if (this.isNativeAdShowing && this.currentNativeAdScreen === 'home') {
+            console.log("[HomeBanner] Skipped: Home Native is already showing");
+            return false;
+        }
 
         const initialized = await this.initialize();
         if (!initialized) return false;
@@ -1918,37 +2400,44 @@ async showNativeAd(screenName) {
     let heightDp = 120;
     let bottomMarginDp = 16;
     let horizontalMarginDp = 16;
+    let placementName = screenName ? screenName.toUpperCase() : 'HOME';
 
     if (screenName === 'home') {
         configKey = 'HOME_NATIVE';
         heightDp = 110;
         bottomMarginDp = 16;
         horizontalMarginDp = 16;
+        placementName = 'HOME';
     } else if (screenName === 'gameplay') {
         configKey = 'HOME_NATIVE';
         heightDp = 105;
         bottomMarginDp = 12;
         horizontalMarginDp = 12;
+        placementName = 'GAMEPLAY';
     } else if (screenName === 'achievements') {
         configKey = 'ACHIEVEMENTS_NATIVE';
         heightDp = 120;
         bottomMarginDp = 16;
         horizontalMarginDp = 16;
+        placementName = 'ACHIEVEMENTS';
     } else if (screenName === 'daily_challenge') {
         configKey = 'DAILY_CHALLENGE_NATIVE';
         heightDp = 120;
         bottomMarginDp = 16;
         horizontalMarginDp = 16;
+        placementName = 'DAILY_CHALLENGE';
     } else if (screenName === 'victory') {
         configKey = 'HOME_NATIVE';
         heightDp = 120;
         bottomMarginDp = 16;
         horizontalMarginDp = 16;
+        placementName = 'VICTORY';
     } else if (screenName === 'pause') {
         configKey = 'HOME_NATIVE';
         heightDp = 120;
         bottomMarginDp = 16;
         horizontalMarginDp = 16;
+        placementName = 'PAUSE';
     }
     
     if (!configKey) {
@@ -1966,6 +2455,10 @@ async showNativeAd(screenName) {
     
     console.log(`[NativeAd] Using ad unit ID: ${adId} for ${configKey} (height=${heightDp}dp, bottom=${bottomMarginDp}dp)`);
     
+    if (screenName === 'home') {
+        this.isHomeNativeLoading = true;
+    }
+
     try {
         const NativeAd = this.getNativeAdPlugin();
         console.log(`[NativeAd] Plugin registered: ${!!NativeAd}`);
@@ -1978,6 +2471,7 @@ async showNativeAd(screenName) {
             }
 
             await NativeAd.showNativeAd({
+                placement: placementName,
                 adUnitId: adId,
                 heightDp: heightDp,
                 bottomMarginDp: bottomMarginDp,
@@ -2010,8 +2504,11 @@ async showNativeAd(screenName) {
                 const homeScreen = document.getElementById('home-screen');
                 if (homeScreen) homeScreen.classList.remove('has-native-ad');
                 if (this.isFeatureEnabled('home_banner_fallback_enabled')) {
-                    console.log(`[NativeAd] Fallback to Home Banner`);
-                    this.showHomeBannerAd();
+                    const isStillOnHome = homeScreen && !homeScreen.classList.contains('hidden') && homeScreen.classList.contains('active');
+                    if (isStillOnHome) {
+                        console.log(`[NativeAd] Fallback to Home Banner`);
+                        this.showHomeBannerAd();
+                    }
                 }
             } else if (screenName === 'gameplay') {
                 const gameScreen = document.getElementById('game-screen');
@@ -2032,16 +2529,27 @@ async showNativeAd(screenName) {
         console.error(`[NativeAd] Failed error for ${screenName}:`, e);
         logPlacement("failed", e.message || JSON.stringify(e));
         if (screenName === 'home' && this.isFeatureEnabled('home_banner_fallback_enabled')) {
-            console.log(`[NativeAd] Fallback to Home Banner`);
-            this.showHomeBannerAd();
+            const homeScreen = document.getElementById('home-screen');
+            const isStillOnHome = homeScreen && !homeScreen.classList.contains('hidden') && homeScreen.classList.contains('active');
+            if (isStillOnHome) {
+                console.log(`[NativeAd] Fallback to Home Banner (user still on Home)`);
+                this.showHomeBannerAd();
+            } else {
+                console.log(`[NativeAd] Fallback to Home Banner skipped: user already left Home`);
+            }
         }
         return false;
+    } finally {
+        if (screenName === 'home') {
+            this.isHomeNativeLoading = false;
+        }
     }
 },
 
-async hideNativeAd() {
-    const prevScreen = this.currentNativeAdScreen;
+async hideNativeAd(screenName = null) {
+    const prevScreen = screenName || this.currentNativeAdScreen;
     this.isNativeAdShowing = false;
+    this.isHomeNativeLoading = false;
     this.currentNativeAdScreen = null;
 
     if (prevScreen === 'home') {
@@ -2060,7 +2568,8 @@ async hideNativeAd() {
     try {
         const NativeAd = this.getNativeAdPlugin();
         if (NativeAd) {
-            await NativeAd.hideNativeAd();
+            const placement = prevScreen ? prevScreen.toUpperCase() : null;
+            await NativeAd.hideNativeAd({ placement });
             console.log("[NativeAd] Hidden/Destroyed");
         }
     } catch (e) {
@@ -2133,6 +2642,10 @@ async showGameplayAd() {
 },
 
 async initAppOpenAd() {
+    if (this.isAppOpenInitialized) {
+        console.log("[AppOpen] init skipped: already initialized");
+        return;
+    }
     if (window.isPremium) return;
     const isAppOpenEnabled = this.isFeatureEnabled('app_open_ads_enabled');
     if (!isAppOpenEnabled) {
@@ -2198,6 +2711,7 @@ async initAppOpenAd() {
                 enabled: true,
                 autoResume: true
             });
+            this.isAppOpenInitialized = true;
             console.log("[AppOpenAd] Initialized successfully with unit:", adId);
         }
     } catch (e) {
@@ -2271,12 +2785,33 @@ async showAppOpenAd(options = {}) {
     return false;
 },
 
+notifyColdStartExpired() {
+    try {
+        const AppOpenAd = this.getAppOpenAdPlugin();
+        if (AppOpenAd && AppOpenAd.onColdStartWindowExpired) {
+            AppOpenAd.onColdStartWindowExpired().catch(() => {});
+        }
+    } catch (e) {}
+},
+
 setPremium(isPremium) {
     window.isPremium = isPremium;
     try {
         const AppOpenAd = this.getAppOpenAdPlugin();
         if (AppOpenAd) {
             AppOpenAd.setPremium({ isPremium: !!isPremium });
+        }
+    } catch (e) {}
+    try {
+        const RewardedAd = this.getRewardedAdPlugin();
+        if (RewardedAd) {
+            RewardedAd.setPremium({ isPremium: !!isPremium });
+        }
+    } catch (e) {}
+    try {
+        const InterstitialAd = this.getInterstitialAdPlugin();
+        if (InterstitialAd) {
+            InterstitialAd.setPremium({ isPremium: !!isPremium });
         }
     } catch (e) {}
 }

@@ -2,184 +2,213 @@ package com.antigravity.sudokupro;
 
 import android.app.Activity;
 import android.util.Log;
-import android.view.Gravity;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.Button;
-import android.widget.FrameLayout;
-import android.widget.ImageView;
-import android.widget.TextView;
 
+import androidx.annotation.NonNull;
+
+import com.antigravity.sudokupro.ads.NativeAdManager;
+import com.antigravity.sudokupro.ads.NativeAdSlot;
+import com.antigravity.sudokupro.ads.NativePlacement;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
-import com.google.android.gms.ads.AdListener;
-import com.google.android.gms.ads.AdLoader;
-import com.google.android.gms.ads.AdRequest;
-import com.google.android.gms.ads.LoadAdError;
-import com.google.android.gms.ads.nativead.NativeAd;
-import com.google.android.gms.ads.nativead.NativeAdView;
-
+/**
+ * NativeAdPlugin — Capacitor bridge delegating directly to NativeAdManager.
+ * Modeled on World Clock's placement-aware NativeAdPair architecture.
+ */
 @CapacitorPlugin(name = "NativeAd")
 public class NativeAdPlugin extends Plugin {
 
     private static final String TAG = "NativeAdPlugin";
-    private NativeAd currentNativeAd;
-    private NativeAdView currentNativeAdView;
-    private FrameLayout nativeAdOverlayContainer;
+    private NativeAdManager mManager;
+
+    @Override
+    public void load() {
+        super.load();
+        mManager = NativeAdManager.getInstance();
+        if (getContext() != null) {
+            mManager.initialize(getContext());
+        }
+        if (getActivity() != null) {
+            mManager.updateCurrentActivity(getActivity());
+        }
+        Log.d(TAG, "NativeAdPlugin loaded successfully.");
+    }
 
     @PluginMethod
     public void showNativeAd(PluginCall call) {
-        String adUnitId = call.getString("adUnitId");
-        if (adUnitId == null || adUnitId.isEmpty()) {
-            call.reject("adUnitId is required");
-            return;
+        try {
+            String placementStr = call.getString("placement");
+            if (placementStr == null || placementStr.isEmpty()) {
+                placementStr = call.getString("screenName", "home");
+            }
+            NativePlacement placement = NativePlacement.fromString(placementStr);
+
+            String adUnitId = call.getString("adUnitId");
+            int heightDp = call.getInt("heightDp", placement.getDefaultHeightDp());
+            int bottomMarginDp = call.getInt("bottomMarginDp", placement.getDefaultBottomMarginDp());
+            int horizontalMarginDp = call.getInt("horizontalMarginDp", placement.getDefaultHorizontalMarginDp());
+
+            if (getActivity() != null) {
+                mManager.updateCurrentActivity(getActivity());
+            }
+
+            mManager.showNativeAd(placement, adUnitId, heightDp, bottomMarginDp, horizontalMarginDp, (shown, message) -> {
+                if (shown) {
+                    JSObject ret = new JSObject();
+                    ret.put("shown", true);
+                    ret.put("placement", placement.name());
+                    ret.put("message", message);
+                    call.resolve(ret);
+                } else {
+                    Log.w(TAG, "[NativeAd] showNativeAd failed for " + placement + ": " + message);
+                    call.reject("Native ad show failed: " + message);
+                }
+            });
+
+        } catch (Exception e) {
+            Log.e(TAG, "Exception in showNativeAd", e);
+            call.reject("showNativeAd exception: " + e.getMessage());
         }
-
-        int heightDp = call.getInt("heightDp", 120);
-        int bottomMarginDp = call.getInt("bottomMarginDp", 16);
-        int horizontalMarginDp = call.getInt("horizontalMarginDp", 16);
-
-        Activity activity = getActivity();
-        if (activity == null) {
-            call.reject("Activity is null");
-            return;
-        }
-
-        activity.runOnUiThread(() -> {
-            // First hide any existing ad
-            hideExistingAd();
-
-            AdLoader adLoader = new AdLoader.Builder(activity, adUnitId)
-                    .forNativeAd(nativeAd -> {
-                        if (activity.isDestroyed()) {
-                            nativeAd.destroy();
-                            return;
-                        }
-                        currentNativeAd = nativeAd;
-                        displayNativeAd(nativeAd, heightDp, bottomMarginDp, horizontalMarginDp);
-                    })
-                    .withAdListener(new AdListener() {
-                        @Override
-                        public void onAdFailedToLoad(LoadAdError adError) {
-                            Log.e(TAG, "Failed to load native ad: " + adError.getMessage());
-                            call.reject("Ad failed to load: " + adError.getMessage());
-                        }
-
-                        @Override
-                        public void onAdLoaded() {
-                            call.resolve();
-                        }
-                    })
-                    .build();
-
-            adLoader.loadAd(new AdRequest.Builder().build());
-        });
     }
 
     @PluginMethod
     public void hideNativeAd(PluginCall call) {
-        Activity activity = getActivity();
-        if (activity == null) {
-            call.reject("Activity is null");
-            return;
-        }
+        try {
+            String placementStr = call.getString("placement");
+            NativePlacement placement = placementStr != null && !placementStr.isEmpty()
+                    ? NativePlacement.fromString(placementStr)
+                    : null;
 
-        activity.runOnUiThread(() -> {
-            hideExistingAd();
+            if (getActivity() != null) {
+                mManager.updateCurrentActivity(getActivity());
+            }
+
+            mManager.hideNativeAd(placement);
+
+            JSObject ret = new JSObject();
+            ret.put("hidden", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Exception in hideNativeAd", e);
+            call.reject("hideNativeAd exception: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void enterScreen(PluginCall call) {
+        try {
+            String placementStr = call.getString("placement");
+            if (placementStr == null || placementStr.isEmpty()) {
+                placementStr = call.getString("screenName", "home");
+            }
+            NativePlacement placement = NativePlacement.fromString(placementStr);
+
+            if (getActivity() != null) {
+                mManager.updateCurrentActivity(getActivity());
+            }
+
+            mManager.notifyScreenEntered(placement);
+
+            JSObject ret = new JSObject();
+            ret.put("entered", placement.name());
+            ret.put("screenGeneration", mManager.getScreenGeneration(placement));
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Exception in enterScreen", e);
+            call.reject("enterScreen exception: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void leaveScreen(PluginCall call) {
+        try {
+            String placementStr = call.getString("placement");
+            if (placementStr == null || placementStr.isEmpty()) {
+                placementStr = call.getString("screenName", "home");
+            }
+            NativePlacement placement = NativePlacement.fromString(placementStr);
+
+            mManager.notifyScreenLeft(placement);
+
+            JSObject ret = new JSObject();
+            ret.put("left", placement.name());
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Exception in leaveScreen", e);
+            call.reject("leaveScreen exception: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void isReady(PluginCall call) {
+        try {
+            String placementStr = call.getString("placement");
+            NativePlacement placement = NativePlacement.fromString(placementStr);
+            boolean ready = mManager.isReady(placement);
+
+            JSObject ret = new JSObject();
+            ret.put("ready", ready);
+            ret.put("placement", placement.name());
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Exception in isReady", e);
+            call.reject("isReady exception: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void configure(PluginCall call) {
+        try {
+            boolean enabled = call.getBoolean("enabled", true);
+            boolean premium = call.getBoolean("isPremium", false);
+            boolean testMode = call.getBoolean("testMode", false);
+
+            if (getActivity() != null) {
+                mManager.updateCurrentActivity(getActivity());
+            }
+
+            mManager.configure(enabled, premium, testMode);
+
+            JSObject ret = new JSObject();
+            ret.put("configured", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Exception in configure", e);
+            call.reject("configure exception: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void configureUnits(PluginCall call) {
+        try {
+            JSObject units = call.getObject("units");
+            if (units != null) {
+                for (NativePlacement p : NativePlacement.values()) {
+                    String unitId = units.getString(p.name());
+                    if (unitId != null && !unitId.isEmpty()) {
+                        mManager.setAdUnitId(p, unitId);
+                    }
+                }
+            }
             call.resolve();
-        });
+        } catch (Exception e) {
+            Log.e(TAG, "Exception in configureUnits", e);
+            call.reject(e.getMessage());
+        }
     }
 
-    private void displayNativeAd(NativeAd nativeAd, int heightDp, int bottomMarginDp, int horizontalMarginDp) {
-        Activity activity = getActivity();
-        if (activity == null) return;
-
-        currentNativeAdView = (NativeAdView) activity.getLayoutInflater()
-                .inflate(R.layout.native_ad_layout, null);
-
-        // Map views
-        currentNativeAdView.setHeadlineView(currentNativeAdView.findViewById(R.id.ad_headline));
-        currentNativeAdView.setBodyView(currentNativeAdView.findViewById(R.id.ad_body));
-        currentNativeAdView.setCallToActionView(currentNativeAdView.findViewById(R.id.ad_call_to_action));
-        currentNativeAdView.setIconView(currentNativeAdView.findViewById(R.id.ad_app_icon));
-
-        // Populate views
-        ((TextView) currentNativeAdView.getHeadlineView()).setText(nativeAd.getHeadline());
-
-        if (nativeAd.getBody() == null) {
-            currentNativeAdView.getBodyView().setVisibility(View.INVISIBLE);
-        } else {
-            currentNativeAdView.getBodyView().setVisibility(View.VISIBLE);
-            ((TextView) currentNativeAdView.getBodyView()).setText(nativeAd.getBody());
-        }
-
-        if (nativeAd.getCallToAction() == null) {
-            currentNativeAdView.getCallToActionView().setVisibility(View.INVISIBLE);
-        } else {
-            currentNativeAdView.getCallToActionView().setVisibility(View.VISIBLE);
-            ((Button) currentNativeAdView.getCallToActionView()).setText(nativeAd.getCallToAction());
-        }
-
-        if (nativeAd.getIcon() == null) {
-            currentNativeAdView.getIconView().setVisibility(View.GONE);
-        } else {
-            ((ImageView) currentNativeAdView.getIconView()).setImageDrawable(
-                    nativeAd.getIcon().getDrawable());
-            currentNativeAdView.getIconView().setVisibility(View.VISIBLE);
-        }
-
-        currentNativeAdView.setNativeAd(nativeAd);
-
-        // Add to parent view at the bottom
-        FrameLayout root = activity.findViewById(android.R.id.content);
-        nativeAdOverlayContainer = new FrameLayout(activity);
-        
-        float density = activity.getResources().getDisplayMetrics().density;
-        FrameLayout.LayoutParams containerParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                (int) (heightDp * density)
-        );
-        containerParams.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-        containerParams.bottomMargin = (int) (bottomMarginDp * density);
-        containerParams.leftMargin = (int) (horizontalMarginDp * density);
-        containerParams.rightMargin = (int) (horizontalMarginDp * density);
-        
-        FrameLayout.LayoutParams viewParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-        );
-        nativeAdOverlayContainer.addView(currentNativeAdView, viewParams);
-        
-        root.addView(nativeAdOverlayContainer, containerParams);
-        root.bringChildToFront(nativeAdOverlayContainer);
-        nativeAdOverlayContainer.bringToFront();
-        nativeAdOverlayContainer.setVisibility(View.VISIBLE);
-
-        nativeAdOverlayContainer.post(() -> Log.d(TAG, "[NativeAd] visible on screen y=" + nativeAdOverlayContainer.getY() + " height=" + nativeAdOverlayContainer.getHeight()));
-    }
-
-    private void hideExistingAd() {
-        if (nativeAdOverlayContainer != null) {
-            ViewGroup parent = (ViewGroup) nativeAdOverlayContainer.getParent();
-            if (parent != null) {
-                parent.removeView(nativeAdOverlayContainer);
-            }
-            nativeAdOverlayContainer = null;
-        }
-        if (currentNativeAdView != null) {
-            ViewGroup parent = (ViewGroup) currentNativeAdView.getParent();
-            if (parent != null) {
-                parent.removeView(currentNativeAdView);
-            }
-            currentNativeAdView = null;
-        }
-        if (currentNativeAd != null) {
-            currentNativeAd.destroy();
-            currentNativeAd = null;
+    @PluginMethod
+    public void setPremium(PluginCall call) {
+        try {
+            boolean premium = call.getBoolean("isPremium", false);
+            mManager.setPremium(premium);
+            call.resolve();
+        } catch (Exception e) {
+            Log.e(TAG, "Exception in setPremium", e);
+            call.reject(e.getMessage());
         }
     }
 }

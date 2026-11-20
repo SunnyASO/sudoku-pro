@@ -723,8 +723,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (typeof AdMobService !== 'undefined') {
                 AdMobService.setPremium(isPurchased);
             }
-            if (settingsAdsBtn) {
-                settingsAdsBtn.textContent = isPurchased ? 'Ads Removed' : 'Remove Ads';
+            const adsBtn = document.getElementById('settings-ads-btn');
+            if (adsBtn) {
+                adsBtn.textContent = isPurchased ? 'Ads Removed' : 'Remove Ads';
             }
             if (isPurchased) {
                 trackEvent('remove_ads_active');
@@ -741,8 +742,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.log("Purchase successful event received");
             window.isPremium = true;
             if (typeof AdMobService !== 'undefined') AdMobService.setPremium(true);
-            if (settingsAdsBtn) {
-                settingsAdsBtn.textContent = 'Ads Removed';
+            const adsBtn = document.getElementById('settings-ads-btn');
+            if (adsBtn) {
+                adsBtn.textContent = 'Ads Removed';
             }
             trackEvent('remove_ads_purchased');
             alert("Thank you! Ads have been removed.");
@@ -771,22 +773,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log("[Startup] remote_config_ready");
 
     // ═══════════════════════════════════════════════
-    //  ADMOB SDK INITIALIZATION & APP OPEN PRELOAD
+    //  AUTHORITATIVE UMP CONSENT & ADMOB INITIALIZATION
     // ═══════════════════════════════════════════════
     console.log("[Startup] admob_initialize_start");
     if (typeof AdMobService !== 'undefined') {
         try {
-            await AdMobService.initialize();
-            console.log("[Startup] admob_initialize_complete");
-        } catch (err) {
-            console.warn("[Startup] AdMob init error:", err);
-        }
+            console.log("[Startup] gathering_consent_start");
+            const consentResult = await AdMobService.gatherConsent();
+            console.log("[Startup] gathering_consent_complete:", consentResult);
 
-        // Every true app launch attempts to preload App Open ad when eligible
-        if (!window.isPremium && AdMobService.isFeatureEnabled('app_open_ads_enabled')) {
-            console.log("[AppOpen] launch_detected");
-            console.log("[AppOpen] preload_started");
-            await AdMobService.initAppOpenAd();
+            if (AdMobService.canRequestAds()) {
+                await AdMobService.initialize();
+                console.log("[Startup] admob_initialize_complete");
+
+                // Every true app launch attempts to preload App Open ad when eligible
+                if (!window.isPremium && AdMobService.isFeatureEnabled('app_open_ads_enabled')) {
+                    console.log("[AppOpen] launch_detected");
+                    console.log("[AppOpen] preload_started");
+                    await AdMobService.initAppOpenAd();
+                }
+            } else {
+                console.log("[Startup] Ads disabled by UMP consent (canRequestAds=false). AdMob initialization skipped.");
+            }
+        } catch (err) {
+            console.warn("[Startup] AdMob init / consent error:", err);
         }
     }
 
@@ -2258,10 +2268,26 @@ if (rewardAdConfirm) {
     }
 
     // Settings logic
+    function updatePrivacyChoicesVisibility() {
+        const btn = document.getElementById('settings-privacy-choices-btn');
+        const divider = document.getElementById('settings-privacy-choices-divider');
+        if (!btn) return;
+        const required = typeof AdMobService !== 'undefined' && AdMobService.isPrivacyOptionsRequired();
+        if (required) {
+            btn.style.display = 'flex';
+            if (divider) divider.style.display = 'block';
+        } else {
+            btn.style.display = 'none';
+            if (divider) divider.style.display = 'none';
+        }
+    }
+
     if (settingsBtn) {
         settingsBtn.addEventListener('click', () => {
             ThemeEngine.updateSettingsUI();
+            updatePrivacyChoicesVisibility();
             settingsModal.classList.remove('hidden');
+            if (!window.isPremium && typeof AdMobService !== 'undefined') AdMobService.prepareRewarded('THEME_UNLOCK');
             if (typeof AdMobService !== 'undefined') AdMobService.hideNativeAd();
         });
     }
@@ -2269,6 +2295,9 @@ if (rewardAdConfirm) {
     if (closeSettingsBtn) {
         closeSettingsBtn.addEventListener('click', () => {
             settingsModal.classList.add('hidden');
+            if (typeof AdMobService !== 'undefined') {
+                AdMobService.disposeRewarded('THEME_UNLOCK', 'OPPORTUNITY_LEFT');
+            }
             if (!homeScreen.classList.contains('hidden-view') && typeof AdMobService !== 'undefined') {
                 AdMobService.showNativeAd('home');
             }
@@ -2314,6 +2343,21 @@ if (rewardAdConfirm) {
                 trackEvent('remove_ads_clicked');
             } else {
                 alert('Billing is not available on this platform. (Plugin not registered)');
+            }
+        });
+    }
+
+    const settingsPrivacyChoicesBtn = document.getElementById('settings-privacy-choices-btn');
+    if (settingsPrivacyChoicesBtn) {
+        settingsPrivacyChoicesBtn.addEventListener('click', async () => {
+            if (typeof AdMobService !== 'undefined') {
+                try {
+                    const res = await AdMobService.showPrivacyOptions();
+                    console.log("[Settings] Privacy choices completed:", res);
+                    updatePrivacyChoicesVisibility();
+                } catch (e) {
+                    console.error("[Settings] Error opening privacy choices:", e);
+                }
             }
         });
     }
@@ -2977,9 +3021,21 @@ async function restartGame() {
                 updateMistakeUI();
                 StatsEngine.recordMistake();
                 if (mistakes >= MAX_MISTAKES) {
-    handleMistakeLimitReached();
-    return;
-}
+                    handleMistakeLimitReached();
+                    return;
+                } else if (mistakes === MAX_MISTAKES - 1 && !window.isPremium) {
+                    if (!mistakeRescueUsedThisGame) {
+                        // INTENT-PROXIMATE PRELOAD: Prepare Mistake Rescue rewarded ad when 1 mistake away from limit
+                        if (typeof AdMobService !== 'undefined' && AdMobService.prepareRewarded) {
+                            AdMobService.prepareRewarded('MISTAKE_RESCUE');
+                        }
+                    } else {
+                        // Mistake rescue already consumed: next mistake will trigger Game Over
+                        if (typeof AdMobService !== 'undefined' && AdMobService.prepareInterstitial) {
+                            AdMobService.prepareInterstitial('GAME_OVER');
+                        }
+                    }
+                }
             } else {
                 SoundEngine.playPop();
                 HapticEngine.light();
@@ -3066,6 +3122,9 @@ const wantsRescue = await showRewardAdModal({
         clearSavedGame();
         gameOverModal.classList.remove('hidden');
         trackEvent('game_over', { difficulty: selectedDifficulty, is_daily_challenge: isDailyChallenge, elapsed_seconds: secondsElapsed, mistakes: mistakes });
+        if (!window.isPremium && typeof AdMobService !== 'undefined' && AdMobService.prepareInterstitial) {
+            AdMobService.prepareInterstitial('GAME_OVER');
+        }
     }
 
     // --- Validation & Group Pulse Logic ---
@@ -3339,6 +3398,17 @@ const wantsRescue = await showRewardAdModal({
                       victoryModal.classList.remove('has-native-ad');
                   }
                   victoryModal.classList.remove('hidden');
+                  if (!window.isPremium && typeof AdMobService !== 'undefined') {
+                      if (AdMobService.disposeInterstitial) {
+                          AdMobService.disposeInterstitial('GAME_OVER', 'OPPORTUNITY_LEFT');
+                      }
+                      if (!bonusRewardClaimedForCurrentVictory && AdMobService.prepareRewarded) {
+                          AdMobService.prepareRewarded('VICTORY_BONUS');
+                      }
+                      if (AdMobService.prepareInterstitial) {
+                          AdMobService.prepareInterstitial('COMPLETION');
+                      }
+                  }
                 } else {
                     alert(`Congratulations! Puzzle solved in ${timerDisplay.textContent}.`);
                     startNewGame();
@@ -3488,6 +3558,9 @@ const wantsAd = await showRewardAdModal({
             if (hintsRemaining <= 0) {
                 hintCountSpan.textContent = "AD";
                 hintCountSpan.className = "tool-badge tool-badge-ad";
+                if (!window.isPremium && typeof AdMobService !== 'undefined' && AdMobService.prepareRewarded) {
+                    AdMobService.prepareRewarded('HINT');
+                }
             } else {
                 hintCountSpan.textContent = hintsRemaining;
                 hintCountSpan.className = "tool-badge";
@@ -3693,9 +3766,9 @@ const wantsAd = await showRewardAdModal({
         clearAutoCheckHighlights();
         updateAutoCheckUI();
 
-        // Proactively preload Rewarded ad so Hints / Mistake Rescue show with 0ms latency
+        // Clear any stale rewarded slot from prior puzzle session (intent-proximate model)
         if (typeof AdMobService !== 'undefined') {
-            AdMobService.preloadRewardedAd();
+            AdMobService.disposeRewarded(null, 'OPPORTUNITY_LEFT');
         }
 
         // Clear pause state
@@ -4392,7 +4465,11 @@ updateHintUI();
         isMistakeRescueRequestInProgress = false;
 
         if (typeof AdMobService !== 'undefined') {
-            AdMobService.preloadRewardedAd();
+            if (mistakes === MAX_MISTAKES - 1 && !mistakeRescueUsedThisGame && !window.isPremium) {
+                AdMobService.prepareRewarded('MISTAKE_RESCUE');
+            } else if (hintsRemaining <= 0 && !window.isPremium) {
+                AdMobService.prepareRewarded('HINT');
+            }
         }
         undoStack = [];
 
@@ -4644,6 +4721,7 @@ updateHintUI();
     if (dailyChallengeBtn) {
         dailyChallengeBtn.addEventListener('click', () => {
             DailyChallengeEngine.openModal();
+            if (!window.isPremium && typeof AdMobService !== 'undefined') AdMobService.prepareRewarded('DAILY_CHALLENGE');
             if (typeof AdMobService !== 'undefined') AdMobService.showNativeAd('daily_challenge');
         });
     }
@@ -4666,7 +4744,10 @@ updateHintUI();
     if (closeDailyBtn) {
         closeDailyBtn.addEventListener('click', () => {
             if (dailyChallengeModal) dailyChallengeModal.classList.add('hidden');
-            if (typeof AdMobService !== 'undefined') AdMobService.hideNativeAd();
+            if (typeof AdMobService !== 'undefined') {
+                AdMobService.disposeRewarded('DAILY_CHALLENGE', 'OPPORTUNITY_LEFT');
+                AdMobService.hideNativeAd();
+            }
             if (!homeScreen.classList.contains('hidden-view') && typeof AdMobService !== 'undefined') {
                 AdMobService.showNativeAd('home');
             }
@@ -4863,7 +4944,9 @@ updateHintUI();
     if (homeSettingsBtn) {
         homeSettingsBtn.addEventListener('click', () => {
             ThemeEngine.updateSettingsUI();
+            updatePrivacyChoicesVisibility();
             if (settingsModal) settingsModal.classList.remove('hidden');
+            if (!window.isPremium && typeof AdMobService !== 'undefined') AdMobService.prepareRewarded('THEME_UNLOCK');
             if (typeof AdMobService !== 'undefined') AdMobService.hideNativeAd();
         });
     }
@@ -4891,6 +4974,7 @@ updateHintUI();
     if (navTabDaily) {
         navTabDaily.addEventListener('click', () => {
             DailyChallengeEngine.openModal();
+            if (!window.isPremium && typeof AdMobService !== 'undefined') AdMobService.prepareRewarded('DAILY_CHALLENGE');
             if (typeof AdMobService !== 'undefined') AdMobService.showNativeAd('daily_challenge');
         });
     }
@@ -5059,16 +5143,25 @@ updateHintUI();
                         const shown = await AdMobService.showAppOpenAd({ context: 'cold_start', ignoreGameplayCheck: true });
                         if (!shown) {
                             console.log("[AppOpen] skipped reason=show_failed");
+                            if (typeof AdMobService !== 'undefined' && typeof AdMobService.notifyColdStartExpired === 'function') {
+                                AdMobService.notifyColdStartExpired();
+                            }
                             revealHomeScreen();
                         }
                         return;
                     } else {
                         console.log("[AppOpen] skipped reason=not_ready_within_startup_window");
+                        if (typeof AdMobService !== 'undefined' && typeof AdMobService.notifyColdStartExpired === 'function') {
+                            AdMobService.notifyColdStartExpired();
+                        }
                     }
                 }
 
                 // If not eligible or not ready, complete splash intro and reveal home cleanly
                 setTimeout(() => {
+                    if (typeof AdMobService !== 'undefined' && typeof AdMobService.notifyColdStartExpired === 'function') {
+                        AdMobService.notifyColdStartExpired();
+                    }
                     revealHomeScreen();
                 }, phase2FallbackHoldMs);
             })();
